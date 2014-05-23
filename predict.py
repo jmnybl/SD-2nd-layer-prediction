@@ -15,17 +15,21 @@ import cPickle
 import math
 import subprocess # needed for pigz
 
-from Features import JumpFeatures
+from features import JumpFeatures,RelFeatures
 import numpy as np
 
 
-class Model(object):
-
-    def __init__(self,modelf,featf):
-        self.klasses={u"DontJump":1,u"adpos":2,u"advcl":3,u"advmod":4,u"acomp":5,u"amod":6,u"appos":7,u"aux":8,u"cc":9,u"ccomp":10,u"compar":11,
+JUMPCLASSES={u"DontJump":1,u"adpos":2,u"advcl":3,u"advmod":4,u"acomp":5,u"amod":6,u"appos":7,u"aux":8,u"cc":9,u"ccomp":10,u"compar":11,
 u"comparator":12,u"complm":13,u"conj":14,u"cop":15,u"csubj":16,u"csubj-cop":17,u"dep":18,u"det":19,u"dobj":20,u"ellipsis":21,u"gobj":22,u"iccomp":23,
 u"infmod":24,u"mark":25,u"name":26,u"neg":27,u"nn":28,u"nommod":29,u"nsubj":30,u"nsubj-cop":31,u"num":32,u"number":33,u"parataxis":34,u"partmod":35,u"poss":36,u"preconj":37,u"prt":38,u"quantmod":39,u"rcmod":40,
 u"rel":41,u"xcomp":42,u"xsubj":43,u"gsubj":44,u"nommod-own":45,u"intj":46,u"punct":47,u"auxpass":48,u"voc":49,u"xsubj-cop":50,u"rel&nsubj":51,u"rel&dobj":52,u"rel&nommod":53,u"rel&nsubj-cop":54,u"rel&advmod":55,u"rel&advcl":56,u"rel&nommod-own":57,u"rel&partmod":58,u"rel&poss":59,u"rel&xcomp":60} # TODO: create this during training and pickle
+
+RELCLASSES={u"nsubj":1,u"dobj":2,u"nommod":3,u"nsubj-cop":4,u"advmod":5,u"advcl":6,u"nommod-own":7,u"partmod":8,u"poss":9,u"xcomp":10}
+
+class Model(object):
+
+    def __init__(self,modelf,featf,classes):
+        self.klasses=classes
         self.readModel(modelf,featf)
 
     def readModel(self,modelFile,fFile):
@@ -64,17 +68,18 @@ u"rel":41,u"xcomp":42,u"xsubj":43,u"gsubj":44,u"nommod-own":45,u"intj":46,u"punc
 
 
 
-types=set((u"cc",u"conj",u"punct",u"ellipsis"))
+types=set([u"cc",u"conj",u"punct",u"ellipsis"])
 
 
 def create_tree(sent):
     tree=[]
     for tok in sent:
-        gov=int(tok[8])
-        if gov==0: continue # skip root
+        if tok[8]==u"0": continue # skip root
+        govs=tok[8].split(u",")
+        dtypes=tok[10].split(u",")
         dep=int(tok[0])
-        dtype=tok[10]
-        tree.append((gov,dep,dtype))
+        for gov,dtype in zip(govs,dtypes):
+            tree.append((int(gov),dep,dtype))
     return tree
 
 ### build a set of dep(conj) gov(conj)
@@ -90,20 +95,20 @@ def can_jump(dep,tree):
 #Takes one dependency(governor,dependent,type) and tree
 #Returns a list of places(g,d), where possible new dependency can be
 def possible_jumps(gov,dep,tree):
-    return_list=[]
+    candidates=set()
     #checks if there are possible_jumping-place with same governor, but different dependent
     for g,d,t in tree:
         if g==dep and t==u"conj":
             newDeps_g=gov
             newDeps_d=d
-            return_list.append((newDeps_g,newDeps_d))    
+            candidates.add((newDeps_g,newDeps_d))    
     #checks if there are possible_jumping-place with same dependent, but different governor
     for g,d,t in tree:
         if g==gov and t==u"conj":
             newDeps_g=d
             newDeps_d=dep
-            return_list.append((newDeps_g,newDeps_d))        
-    return return_list
+            candidates.add((newDeps_g,newDeps_d))        
+    return candidates
 
 
 #Takes one possible new dependent place and checks if there are such a dep in tree
@@ -119,16 +124,16 @@ def is_jumped((possible_g,possible_d),tree):
 def gather_all_jumps(g,d,tree):
     recs=possible_jumps(g,d,tree)
     if len(recs)>0:
-        list=[]
+        new_set=set()
         for jump in recs:
-            list+=gather_all_jumps(jump[0],jump[1],tree)
-        recs=recs+list
+            new_set|=gather_all_jumps(jump[0],jump[1],tree)
+        recs|=new_set
         return recs
     else:
         return recs
 
 
-def predict_jump(model,features):
+def predict_one(model,features):
     maxscore=None
     klassnum=None
     for i in xrange(1,len(model.klasses)):
@@ -145,12 +150,12 @@ def predict_jump(model,features):
 
 def jump_sentence(model,sent):
     """ Jump one conll sentence. """
-    fe=JumpFeatures()
+    fe=JumpFeatures() # TODO: no need to create new every time
     tree=create_tree(sent)
     jumped={}
     for g,d,t in tree:
         if can_jump((g,d,t),tree):
-            new_deps=gather_all_jumps(g,d,tree) # TODO maybe should return a set
+            new_deps=gather_all_jumps(g,d,tree)
             uniq_set=set(new_deps)
             for jump_dep in uniq_set:
                 features=fe.createFeatures((g,d,t),jump_dep,tree,sent) #...should return (name,value) tuples
@@ -159,22 +164,30 @@ def jump_sentence(model,sent):
                     feat=model.fDict.get(feature)
                     if feat is not None:
                         fnums.append((feat,1.0))
-                    else: pass 
-                    klass=predict_jump(model,fnums)
-                        
-                    if klass==1: continue
-                    klass_str=model.number2klass[klass]
-                    jumped[jump_dep[1]]=(jump_dep[0],klass_str)
+                klass=predict_one(model,fnums)      
+                if klass==1: continue
+                klass_str=model.number2klass[klass]+u"JUMPED"
+                jumped[jump_dep[1]]=(jump_dep[0],klass_str) # TODO: set
     print len(jumped)
     return jumped
 
-
-
-class FileWriter(object):
-    """ Write the output file on-the-fly and keep track of progress. """
-    def __init__(self):
-        pass
-
+def add_rels(model,sent):
+    fe=RelFeatures()
+    tree=create_tree(sent)
+    new_deps={}
+    for g,d,t in tree:
+        if t==u"rel":
+            features=fe.createFeatures((g,d),tree,sent)
+            fnums=[]
+            for feature in features:
+                feat=model.fDict.get(feature)
+                if feat is not None:
+                    fnums.append((feat,1.0))
+            klass=predict_one(model,fnums)
+            klass_str=model.number2klass[klass]+u"extrarel"
+            new_deps[d]=(g,klass_str)
+    print u"new rels:",len(new_deps)
+    return new_deps
 
 
 class FileReader(object):
@@ -204,23 +217,50 @@ class FileReader(object):
         p=subprocess.Popen(("pigz","--decompress","--to-stdout","--processes","2",fName),stdout=subprocess.PIPE,stdin=None,stderr=subprocess.PIPE)
         return p.stdout
 
+class FileWriter(object):
+    """ Write the output file on-the-fly and keep track of progress. """
+
+    def __init__(self,fName):
+        self.f=codecs.open(fName,u"wt",u"utf-8")
+
+    def write_sent(self,sent):
+        """ Sent is a list of lists. """
+        for line in sent:
+            string=u"\t".join(c for c in line)
+            self.f.write(string+u"\n")
+        self.f.write(u"\n")
+        
+
+
+def merge_deps(sent,extra):
+    """ 
+    Sent is a list of lists (conll lines),
+    extra is a dictionary {key:dependent, value:(gov,dtype)} of new dependencies
+    """
+    for key,value in extra.iteritems():
+        sent[key-1][8]+=u","+str(value[0])
+        sent[key-1][10]+=u","+value[1]
+    return sent
 
 
 if __name__==u"__main__":
 
-    model=Model(u"models/model_jump",u"models/feature_dict_jump.pkl")
+    relmodel=Model(u"models/model_rel",u"models/feature_dict_rel.pkl",RELCLASSES)
+
+    #jumpmodel=Model(u"models/model_jump",u"models/feature_dict_jump.pkl",JUMPCLASSES)
+    #jumpmodel=None
 
     reader=FileReader()
+    writer=FileWriter(u"jumped.conll")
     for sent in reader.conllReader(u"/home/jmnybl/ParseBank/parsebank_v3.conll09.gz"):
-        print sent
-        jumped=jump_sentence(model,sent)
-        for i in xrange(0,len(sent)):
-            value=jumped.get(int(sent[i][0]))
-            if value is not None:
-                sent[i][8]+=u","+str(value[0])
-                sent[i][10]+=u","+str(value[1])
-
-        print sent
+        if len(sent)==0: continue # empty line
+        if len(sent)>1:
+            rels=add_rels(relmodel,sent)
+            sent=merge_deps(sent,rels)
+            #jumped=jump_sentence(jumpmodel,sent)
+            #sent=merge_deps(sent,jumped)
+        writer.write_sent(sent)
+        
                 
 
         
