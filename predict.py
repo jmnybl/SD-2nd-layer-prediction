@@ -14,6 +14,7 @@ import os
 import cPickle
 import math
 import subprocess # needed for pigz
+from collections import defaultdict
 
 from features import JumpFeatures,RelFeatures
 import numpy as np
@@ -113,7 +114,7 @@ def possible_jumps(gov,dep,tree):
 
 #Takes one possible new dependent place and checks if there are such a dep in tree
 #Returns type of dep if found, otherwise None
-def is_jumped((possible_g,possible_d),tree):
+def is_dep((possible_g,possible_d),tree):
     for g,d,t in tree:
         if g==possible_g and d==possible_d:
             return t
@@ -148,17 +149,16 @@ def predict_one(model,features):
                 klassnum=i
     return klassnum
 
-def jump_sentence(model,sent):
+def jump_sentence(model,sent,fClass):
     """ Jump one conll sentence. """
-    fe=JumpFeatures() # TODO: no need to create new every time
     tree=create_tree(sent)
-    jumped={}
+    jumped=defaultdict(lambda:[])
     for g,d,t in tree:
         if can_jump((g,d,t),tree):
             new_deps=gather_all_jumps(g,d,tree)
             uniq_set=set(new_deps)
             for jump_dep in uniq_set:
-                features=fe.createFeatures((g,d,t),jump_dep,tree,sent) #...should return (name,value) tuples
+                features=fClass.createFeatures((g,d,t),jump_dep,tree,sent) #...should return (name,value) tuples
                 fnums=[]
                 for feature in features:
                     feat=model.fDict.get(feature)
@@ -167,17 +167,16 @@ def jump_sentence(model,sent):
                 klass=predict_one(model,fnums)      
                 if klass==1: continue
                 klass_str=model.number2klass[klass]+u"JUMPED"
-                jumped[jump_dep[1]]=(jump_dep[0],klass_str) # TODO: set
+                jumped[jump_dep[1]].append((jump_dep[0],klass_str))
     print len(jumped)
     return jumped
 
-def add_rels(model,sent):
-    fe=RelFeatures()
+def add_rels(model,sent,fClass):
     tree=create_tree(sent)
-    new_deps={}
+    new_deps=defaultdict(lambda:[])
     for g,d,t in tree:
         if t==u"rel":
-            features=fe.createFeatures((g,d),tree,sent)
+            features=fClass.createFeatures((g,d),tree,sent)
             fnums=[]
             for feature in features:
                 feat=model.fDict.get(feature)
@@ -185,8 +184,44 @@ def add_rels(model,sent):
                     fnums.append((feat,1.0))
             klass=predict_one(model,fnums)
             klass_str=model.number2klass[klass]+u"extrarel"
-            new_deps[d]=(g,klass_str)
+            new_deps[d].append((g,klass_str))
     print u"new rels:",len(new_deps)
+    return new_deps
+
+
+def decide_type(token,tree,sent):
+    """ token: gov of new dependency (and gov of xcomp/old subject also) """
+    for g,d,t in tree:
+        if g==token and t==u"cop":
+            return u"xsubj-cop"
+    pos=sent[token-1][4]
+    if pos==u"Adv" or pos==u"N" or pos==u"A":
+        return u"xsubj-cop"
+    return u"xsubj"
+
+
+def predict_xsubjects(sent):
+
+    tree=create_tree(sent)
+    new_deps=defaultdict(lambda:[])
+    subjs={}
+    for g,d,t in tree:
+        if (t==u"nsubj" or t==u"nsubj-cop"):
+            subjs.setdefault(g,[]).append((g,d,t))
+    for g,d,t in tree:
+        if t==u"xcomp" and g in subjs:
+            for subj in subjs[g]:
+                if (is_dep((d,subj[1]),tree)==u"xsubj" or is_dep((d,subj[1]),tree)==u"xsubj-cop"): break # TODO do I really need this?
+                for go,de,ty in tree:
+                    if go==d and ty==u"xcomp": 
+                        if (is_dep((de,subj[1]),tree)==u"xsubj" or is_dep((de,subj[1]),tree)==u"xsubj-cop"): break
+                        ## ketjutettu xcomp
+                        dtype=decide_type(de,tree,sent)
+                        new_deps[subj[1]].append((de,dtype))
+                    ## normal xsubj
+                    dtype=decide_type(d,tree,sent)
+                    new_deps[subj[1]].append((d,dtype))
+    print u"new xsubjs:",len(new_deps)
     return new_deps
 
 
@@ -203,14 +238,15 @@ class FileReader(object):
         for line in data:
             line=unicode(line,u"utf-8")
             line=line.strip()
-            if not line:
+            if not line or line.startswith(u"#"): # skip
+                continue
+            if line.startswith(u"1\t") and sentence:
                 yield sentence
                 sentence=[]
-            else:
-                sentence.append(line.split(u"\t"))
-        data.close()
-        if len(sentence)>0:
-            yield sentence
+            sentence.append(line.split(u"\t"))
+        else:
+            if sentence:
+                yield sentence
 
     def readGzip(self,fName):
         """ Uses multithreaded gzip implementation (pigz) to read gzipped files. """
@@ -235,19 +271,21 @@ class FileWriter(object):
 def merge_deps(sent,extra):
     """ 
     Sent is a list of lists (conll lines),
-    extra is a dictionary {key:dependent, value:(gov,dtype)} of new dependencies
+    extra is a dictionary {key:dependent, value:list of (gov,dtype)} of new dependencies
     """
     for key,value in extra.iteritems():
-        sent[key-1][8]+=u","+str(value[0])
-        sent[key-1][10]+=u","+value[1]
+        sent[key-1][8]+=u","+u",".join(str(c[0]) for c in value)
+        sent[key-1][10]+=u","+u",".join(str(c[1]) for c in value)
     return sent
 
 
 if __name__==u"__main__":
 
     relmodel=Model(u"models/model_rel",u"models/feature_dict_rel.pkl",RELCLASSES)
+    rel_feat=RelFeatures()
 
     #jumpmodel=Model(u"models/model_jump",u"models/feature_dict_jump.pkl",JUMPCLASSES)
+    #jump_feat=JumpFeatures()
     #jumpmodel=None
 
     reader=FileReader()
@@ -255,14 +293,13 @@ if __name__==u"__main__":
     for sent in reader.conllReader(u"/home/jmnybl/ParseBank/parsebank_v3.conll09.gz"):
         if len(sent)==0: continue # empty line
         if len(sent)>1:
-            rels=add_rels(relmodel,sent)
+            rels=add_rels(relmodel,sent,rel_feat)
             sent=merge_deps(sent,rels)
-            #jumped=jump_sentence(jumpmodel,sent)
+            xsubjs=predict_xsubjects(sent)
+            sent=merge_deps(sent,xsubjs)
+            #jumped=jump_sentence(jumpmodel,sent,jump_feat)
             #sent=merge_deps(sent,jumped)
         writer.write_sent(sent)
         
                 
-
-        
-
 
