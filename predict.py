@@ -166,7 +166,7 @@ def jump_sentence(model,sent,fClass):
                         fnums.append((feat,1.0))
                 klass=predict_one(model,fnums)      
                 if klass==1: continue
-                klass_str=model.number2klass[klass]+u"JUMPED"
+                klass_str=model.number2klass[klass]+u"JUMPED" #...for debugging
                 jumped[jump_dep[1]].append((jump_dep[0],klass_str))
     print len(jumped)
     return jumped
@@ -183,14 +183,14 @@ def add_rels(model,sent,fClass):
                 if feat is not None:
                     fnums.append((feat,1.0))
             klass=predict_one(model,fnums)
-            klass_str=model.number2klass[klass]+u"extrarel"
+            klass_str=model.number2klass[klass]+u"extrarel" #...for debugging
             new_deps[d].append((g,klass_str))
     print u"new rels:",len(new_deps)
     return new_deps
 
 
 def decide_type(token,tree,sent):
-    """ token: gov of new dependency (and gov of xcomp/old subject also) """
+    """ token: gov of new dependency (and dep of xcomp also) """
     for g,d,t in tree:
         if g==token and t==u"cop":
             return u"xsubj-cop"
@@ -211,16 +211,16 @@ def predict_xsubjects(sent):
     for g,d,t in tree:
         if t==u"xcomp" and g in subjs:
             for subj in subjs[g]:
-                if (is_dep((d,subj[1]),tree)==u"xsubj" or is_dep((d,subj[1]),tree)==u"xsubj-cop"): break # TODO do I really need this?
+                if (is_dep((d,subj[1]),tree)==u"xsubj" or is_dep((d,subj[1]),tree)==u"xsubj-cop"): break # this is because we run xsubj part twice!
                 for go,de,ty in tree:
                     if go==d and ty==u"xcomp": 
                         if (is_dep((de,subj[1]),tree)==u"xsubj" or is_dep((de,subj[1]),tree)==u"xsubj-cop"): break
-                        ## ketjutettu xcomp
+                        ## xcomp chain
                         dtype=decide_type(de,tree,sent)
                         new_deps[subj[1]].append((de,dtype))
-                    ## normal xsubj
-                    dtype=decide_type(d,tree,sent)
-                    new_deps[subj[1]].append((d,dtype))
+                ## normal xsubj
+                dtype=decide_type(d,tree,sent)
+                new_deps[subj[1]].append((d,dtype))
     print u"new xsubjs:",len(new_deps)
     return new_deps
 
@@ -291,7 +291,6 @@ if __name__==u"__main__":
     reader=FileReader()
     writer=FileWriter(u"jumped.conll")
     for sent in reader.conllReader(u"/home/jmnybl/ParseBank/parsebank_v3.conll09.gz"):
-        if len(sent)==0: continue # empty line
         if len(sent)>1:
             rels=add_rels(relmodel,sent,rel_feat)
             sent=merge_deps(sent,rels)
