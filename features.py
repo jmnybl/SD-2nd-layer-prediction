@@ -197,15 +197,18 @@ def give_morpho(token,f_list,prefix):
     f_list.append(prefix+u"Lemma-"+lemma)
     f_list.append(prefix+u"POS-"+pos)
     tags=reading.split(u"|")
+    cat=None
     for tag in tags:
         if tag==u"_":continue
         if u"+" in tag: continue #just skip
         if u"_" in tag:
-            tag=tag.split(u"_",1)[1]
+            cols=tag.split(u"_",1)
+            cat,tag=cols[0],cols[1]
 #            if parts[0] in cats:
 #                tag=tag.replace(parts[0]+u"_",u"",1)
 #            else: continue
-        f_list.append(prefix+u"Feat-"+tag)
+        if (cat is not None) and (cat in cats):
+            f_list.append(prefix+u"Feat-"+tag)
 
 
 

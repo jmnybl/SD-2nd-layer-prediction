@@ -97,24 +97,20 @@ def can_jump(dep,tree):
 #Returns a list of places(g,d), where possible new dependency can be
 def possible_jumps(gov,dep,tree):
     candidates=set()
-    #checks if there are possible_jumping-place with same governor, but different dependent
     for g,d,t in tree:
-        if g==dep and t==u"conj":
+        if g==dep and t==u"conj": # dependent can jump
             newDeps_g=gov
             newDeps_d=d
             candidates.add((newDeps_g,newDeps_d))    
-    #checks if there are possible_jumping-place with same dependent, but different governor
-    for g,d,t in tree:
-        if g==gov and t==u"conj":
+        elif g==gov and t==u"conj": # governor can jump
             newDeps_g=d
             newDeps_d=dep
             candidates.add((newDeps_g,newDeps_d))        
     return candidates
 
 
-#Takes one possible new dependent place and checks if there are such a dep in tree
-#Returns type of dep if found, otherwise None
 def is_dep((possible_g,possible_d),tree):
+    """ Check if there is dependency between g and d, and return type if found. """
     for g,d,t in tree:
         if g==possible_g and d==possible_d:
             return t
@@ -212,10 +208,9 @@ def predict_xsubjects(sent):
         if t==u"xcomp" and g in subjs:
             for subj in subjs[g]:
                 if (is_dep((d,subj[1]),tree)==u"xsubj" or is_dep((d,subj[1]),tree)==u"xsubj-cop"): break # this is because we run xsubj part twice!
-                for go,de,ty in tree:
+                for go,de,ty in tree: # xcomp chain
                     if go==d and ty==u"xcomp": 
                         if (is_dep((de,subj[1]),tree)==u"xsubj" or is_dep((de,subj[1]),tree)==u"xsubj-cop"): break
-                        ## xcomp chain
                         dtype=decide_type(de,tree,sent)
                         new_deps[subj[1]].append((de,dtype))
                 ## normal xsubj
