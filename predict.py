@@ -145,16 +145,34 @@ def predict_one(model,features):
                 klassnum=i
     return klassnum
 
+def merge_rels(tree):
+    merged=[]
+    rels=[]
+    for g,d,t in tree:
+        if t==u"rel":
+            rels.append((g,d,t))
+    must_delete=[]
+    for g,d,t in tree:
+        if (g,d,u"rel") in rels and t!=u"rel": # merge only if both g and d same, not if post_processed
+            dtype=u"rel&"+t
+            merged.append((g,d,dtype))
+            must_delete.append((g,d,u"rel"))
+        else: merged.append((g,d,t)) # add as is
+    for depen in must_delete: # because we also added original rel dependencies, we now have to remove those
+        merged.remove(depen)
+    return merged
+
 def jump_sentence(model,sent,fClass):
     """ Jump one conll sentence. """
     tree=create_tree(sent)
+    treec=merge_rels(tree)
     jumped=defaultdict(lambda:[])
-    for g,d,t in tree:
-        if can_jump((g,d,t),tree):
-            new_deps=gather_all_jumps(g,d,tree)
+    for g,d,t in treec:
+        if can_jump((g,d,t),treec):
+            new_deps=gather_all_jumps(g,d,treec)
             uniq_set=set(new_deps)
             for jump_dep in uniq_set:
-                features=fClass.createFeatures((g,d,t),jump_dep,tree,sent) #...should return (name,value) tuples
+                features=fClass.createFeatures((g,d,t),jump_dep,treec,sent) #...should return (name,value) tuples
                 fnums=[]
                 for feature in features:
                     feat=model.fDict.get(feature)
@@ -166,6 +184,19 @@ def jump_sentence(model,sent,fClass):
                 jumped[jump_dep[1]].append((jump_dep[0],klass_str))
     print len(jumped)
     return jumped
+
+def post_process_rel(g,d,t,tree):
+    # move dependency if iccomp and it does not have this dtype already
+    for gov,dep,type in tree:
+        deps=set()
+        if g==gov and type==u"iccomp":
+            for gov2,dep2,type2 in tree:
+                if gov2==dep:
+                    deps.add(type2) # collect all dependents of iccomp
+            if t not in deps:
+                g=dep 
+                break
+    return g,d,t
 
 def add_rels(model,sent,fClass):
     tree=create_tree(sent)
@@ -179,8 +210,9 @@ def add_rels(model,sent,fClass):
                 if feat is not None:
                     fnums.append((feat,1.0))
             klass=predict_one(model,fnums)
-            klass_str=model.number2klass[klass]+u"extrarel" #...for debugging
-            new_deps[d].append((g,klass_str))
+            klass_str=model.number2klass[klass]
+            gov,dep,ty=post_process_rel(g,d,klass_str,tree)
+            new_deps[dep].append((gov,ty+u"extrarel")) #...for debugging
     print u"new rels:",len(new_deps)
     return new_deps
 
@@ -268,6 +300,7 @@ def merge_deps(sent,extra):
     Sent is a list of lists (conll lines),
     extra is a dictionary {key:dependent, value:list of (gov,dtype)} of new dependencies
     """
+    # TODO: fill both columns ( HEAD, PHEAD, ...? )
     for key,value in extra.iteritems():
         sent[key-1][8]+=u","+u",".join(str(c[0]) for c in value)
         sent[key-1][10]+=u","+u",".join(str(c[1]) for c in value)
@@ -279,8 +312,8 @@ if __name__==u"__main__":
     relmodel=Model(u"models/model_rel",u"models/feature_dict_rel.pkl",RELCLASSES)
     rel_feat=RelFeatures()
 
-    #jumpmodel=Model(u"models/model_jump",u"models/feature_dict_jump.pkl",JUMPCLASSES)
-    #jump_feat=JumpFeatures()
+    jumpmodel=Model(u"models/model_jump",u"models/feature_dict_jump.pkl",JUMPCLASSES)
+    jump_feat=JumpFeatures()
     #jumpmodel=None
 
     reader=FileReader()
@@ -291,8 +324,8 @@ if __name__==u"__main__":
             sent=merge_deps(sent,rels)
             xsubjs=predict_xsubjects(sent)
             sent=merge_deps(sent,xsubjs)
-            #jumped=jump_sentence(jumpmodel,sent,jump_feat)
-            #sent=merge_deps(sent,jumped)
+            jumped=jump_sentence(jumpmodel,sent,jump_feat)
+            sent=merge_deps(sent,jumped)
         writer.write_sent(sent)
         
                 
