@@ -6,6 +6,7 @@
 # 3) jump
 # 4) xsubj
 
+import time
 
 import codecs
 import glob
@@ -14,7 +15,8 @@ import os
 import cPickle
 import math
 import subprocess # needed for pigz
-from collections import defaultdict
+import gzip
+from collections import defaultdict,namedtuple
 
 from features import JumpFeatures,RelFeatures
 import numpy as np
@@ -71,13 +73,19 @@ class Model(object):
 
 types=set([u"cc",u"conj",u"punct",u"ellipsis"])
 
+CoNLLFormat=namedtuple("CoNLLFormat",["ID","FORM","LEMMA","POS","FEAT","HEAD","DEPREL"])
 
-def create_tree(sent):
+#Column lists for the various formats
+formats={"conll09":CoNLLFormat(0,1,2,4,6,8,10)}
+
+
+def create_tree(sent,conll_format=u"conll09"):
+    form=formats[conll_format]
     tree=[]
     for tok in sent:
-        if tok[8]==u"0": continue # skip root
-        govs=tok[8].split(u",")
-        dtypes=tok[10].split(u",")
+        if tok[form.HEAD]==u"0": continue # skip root
+        govs=tok[form.HEAD].split(u",")
+        dtypes=tok[form.DEPREL].split(u",")
         dep=int(tok[0])
         for gov,dtype in zip(govs,dtypes):
             tree.append((int(gov),dep,dtype))
@@ -180,9 +188,12 @@ def jump_sentence(model,sent,fClass):
                         fnums.append((feat,1.0))
                 klass=predict_one(model,fnums)      
                 if klass==1: continue
-                klass_str=model.number2klass[klass]+u"JUMPED" #...for debugging
-                jumped[jump_dep[1]].append((jump_dep[0],klass_str))
-    print len(jumped)
+                klass_str=model.number2klass[klass]
+                if u"&" in klass_str: # this is merged rel, split
+                    rel,sec=klass_str.split(u"&",1)   
+                    jumped[jump_dep[1]].append((jump_dep[0],rel))
+                    jumped[jump_dep[1]].append((jump_dep[0],sec))
+                else: jumped[jump_dep[1]].append((jump_dep[0],klass_str))
     return jumped
 
 def post_process_rel(g,d,t,tree):
@@ -212,8 +223,7 @@ def add_rels(model,sent,fClass):
             klass=predict_one(model,fnums)
             klass_str=model.number2klass[klass]
             gov,dep,ty=post_process_rel(g,d,klass_str,tree)
-            new_deps[dep].append((gov,ty+u"extrarel")) #...for debugging
-    print u"new rels:",len(new_deps)
+            new_deps[dep].append((gov,ty))
     return new_deps
 
 
@@ -248,7 +258,6 @@ def predict_xsubjects(sent):
                 ## normal xsubj
                 dtype=decide_type(d,tree,sent)
                 new_deps[subj[1]].append((d,dtype))
-    print u"new xsubjs:",len(new_deps)
     return new_deps
 
 
@@ -260,10 +269,14 @@ class FileReader(object):
 
     def conllReader(self,fName):
         """ Returns one conll format sentence at a time. """
-        data=self.readGzip(fName)
+        if fName.endswith(u".gz"):
+            data=self.readGzip(fName)
+        else:
+            data=codecs.open(fName,u"rt",u"utf-8")
         sentence=[]
         for line in data:
-            line=unicode(line,u"utf-8")
+            if not isinstance(line,unicode):
+                line=unicode(line,u"utf-8")
             line=line.strip()
             if not line or line.startswith(u"#"): # skip
                 continue
@@ -284,30 +297,58 @@ class FileWriter(object):
     """ Write the output file on-the-fly and keep track of progress. """
 
     def __init__(self,fName):
-        self.f=codecs.open(fName,u"wt",u"utf-8")
+        self.end=fName.rsplit(u".",1)[1]
+        if fName.endswith(u".gz"):
+            self.f=gzip.open(fName,u"wb")
+        else: self.f=codecs.open(fName,u"wt",u"utf-8")
 
     def write_sent(self,sent):
         """ Sent is a list of lists. """
         for line in sent:
-            string=u"\t".join(c for c in line)
-            self.f.write(string+u"\n")
-        self.f.write(u"\n")
+            string=u"\t".join(c for c in line)+u"\n"
+            if self.end==u"gz":
+                string=string.encode(u"utf-8")
+            self.f.write(string)
+        if self.end==u"gz":
+            self.f.write((u"\n").encode(u"utf-8"))
+        else: self.f.write(u"\n")
         
 
 
-def merge_deps(sent,extra):
+def merge_deps(sent,extra,conll_format=u"conll09"):
     """ 
     Sent is a list of lists (conll lines),
     extra is a dictionary {key:dependent, value:list of (gov,dtype)} of new dependencies
     """
-    # TODO: fill both columns ( HEAD, PHEAD, ...? )
+    # TODO: fill both columns ( HEAD and PHEAD, ...? )
+    form=formats[conll_format]
     for key,value in extra.iteritems():
-        sent[key-1][8]+=u","+u",".join(str(c[0]) for c in value)
-        sent[key-1][10]+=u","+u",".join(str(c[1]) for c in value)
+        sent[key-1][form.HEAD]+=u","+u",".join(str(c[0]) for c in value)
+        sent[key-1][form.DEPREL]+=u","+u",".join(str(c[1]) for c in value)
     return sent
 
 
 if __name__==u"__main__":
+
+    from optparse import OptionParser
+    parser = OptionParser()
+    parser.add_option("-f","--file",dest="f",default=None,help="Input file.")
+    parser.add_option("-o","--out",dest="o",default=None,help="Output file.")
+    (options, args) = parser.parse_args()
+    
+    if options.f is None:
+        print >> sys.stderr, "No input file."
+        sys.exit(1)
+
+    if options.o is None:
+        fName,end=options.f.rsplit(u".",1)
+        out=fName+u"_w_sec."+end
+    else: out=options.o
+
+    print >> sys.stderr, "Output file:",out
+        
+    
+    start=time.clock()
 
     relmodel=Model(u"models/model_rel",u"models/feature_dict_rel.pkl",RELCLASSES)
     rel_feat=RelFeatures()
@@ -316,9 +357,14 @@ if __name__==u"__main__":
     jump_feat=JumpFeatures()
     #jumpmodel=None
 
+    end=time.clock()
+
+    print >> sys.stderr, "%.2gm" % ((end-start)/60)
+
     reader=FileReader()
-    writer=FileWriter(u"jumped.conll")
-    for sent in reader.conllReader(u"/home/jmnybl/ParseBank/parsebank_v3.conll09.gz"):
+    writer=FileWriter(out)
+    tsent=0
+    for sent in reader.conllReader(options.f):
         if len(sent)>1:
             rels=add_rels(relmodel,sent,rel_feat)
             sent=merge_deps(sent,rels)
@@ -327,6 +373,9 @@ if __name__==u"__main__":
             jumped=jump_sentence(jumpmodel,sent,jump_feat)
             sent=merge_deps(sent,jumped)
         writer.write_sent(sent)
+        tsent+=1
+        #if tsent>50000: break
+    print "Processed sentences:",tsent
         
                 
 
