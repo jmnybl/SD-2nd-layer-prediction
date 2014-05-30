@@ -7,10 +7,6 @@ import re
 import sys
 import os
 
-#sys.path.append(os.path.expanduser("~/svn_checkout/annotator"))
-sys.path.append("/home/jmnybl/svn_checkout/TDT/")
-from dtreebank.core.omorfi_pos import tag_cat_dict
-
 
 class JumpFeatures:
 #Class to handle all JumpFeature-based stuff.

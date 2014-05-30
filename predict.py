@@ -146,7 +146,7 @@ def predict_one(model,features):
         offset=((i-1)*model.base_features)
         for fnum,value in features: # list of feature numbers
             w=1/(math.sqrt(len(features)))
-            pos=offset+fnum-1 # position in model.vector
+            pos=offset+fnum # position in model.vector
             score+=w*model.vector[pos]
             if (maxscore is None) or maxscore<score:
                 maxscore=score
@@ -366,12 +366,14 @@ if __name__==u"__main__":
     tsent=0
     for sent in reader.conllReader(options.f):
         if len(sent)>1:
-            rels=add_rels(relmodel,sent,rel_feat)
+            rels=add_rels(relmodel,sent,rel_feat) # rel
             sent=merge_deps(sent,rels)
-            xsubjs=predict_xsubjects(sent)
+            xsubjs=predict_xsubjects(sent) # xsubj
             sent=merge_deps(sent,xsubjs)
-            jumped=jump_sentence(jumpmodel,sent,jump_feat)
+            jumped=jump_sentence(jumpmodel,sent,jump_feat) # jump
             sent=merge_deps(sent,jumped)
+            xsubjs=predict_xsubjects(sent) # xsubj
+            sent=merge_deps(sent,xsubjs)
         writer.write_sent(sent)
         tsent+=1
         #if tsent>50000: break
