@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 import codecs
 import math
-import cPickle
+import json
 import collections
 import re
 import sys
 import os
+
+SCRIPTDIR=os.path.dirname(os.path.abspath(__file__))
 
 
 class JumpFeatures:
@@ -15,110 +17,89 @@ class JumpFeatures:
         pass
 
 
-    def createFeatures(self,dependency,place,tree,sent):
+    def create(self,dependency,g,d,tree):
         """
-        dependency is the original dep,
-        place is the new (gov,dep) pair
-        tree is a list of (gov,dep,dtype) triplets
-        sent is a conll lines
+        dependency: Dep(), original dep
+        g: Token(), gov of propagated dependency
+        d: Token(), dep of propagated dependency
+        tree: Tree()
         """
-        features=[]
+        features=set()
         
         ## DEPENDENCY RELATED (prefix:dep) ##
 
         #dependencyType
-        depType=u"dep:dependencyType-"+dependency[2]
-        features.append(depType)
+        depType=u"dep:dependencyType-"+dependency.dtype
+        features.add(depType)
 
         #different governor
-        if dependency[0]!=place[0]: features.append(u"dep:hasDifferentGov")
-        else: features.append(u"dep:hasSameGov")
+        if dependency.gov!=g: features.add(u"dep:hasDifferentGov")
+        else: features.add(u"dep:hasSameGov")
 
         #if there already is a dependency of same type
         #two cases: 1) kissa ja koira syö --> verb can have two nsubj 2) kissa syö ja koira syö --> verb can't have two nsubj
-        #this is only for case 2
-        for g,d,t in tree: ###FG maybe get a list/dictionary to answer this question
-            if g!=dependency[0]:
-                if g==place[0] and t==dependency[2]:
-                    features.append(u"dep:isSameType")
-                    break
+        #this is only for case 2 
+        for dep in tree.childs[g]:
+            if dep.gov!=dependency.gov and dep.flag!=u"CC" and dep.dtype==dependency.dtype:
+                features.add(u"dep:isSameType")
+                break
 
         # is candidate going to same direction as original
-        orig=dependency[0]-dependency[1]
-        candidate=place[0]-place[1]
-        if orig > 0 and candidate > 0: features.append(u"dep:bothGoingToLeft")
-        elif orig < 0 and candidate < 0: features.append(u"dep:bothGoingToRight")
-        else: features.append(u"dep:differentDirection")
+        orig=dependency.gov.index-dependency.dep.index
+        candidate=g.index-d.index
+        if orig > 0 and candidate > 0: features.add(u"dep:bothGoingToLeft")
+        elif orig < 0 and candidate < 0: features.add(u"dep:bothGoingToRight")
+        else: features.add(u"dep:differentDirection")
             
 
         conjs=0
         #All dependencies Candidate deptok/govtok governs, and Dependency governing Original governor
-        for g,d,t in tree: ##FG - try to avoid these loops
-            if g==place[1]:
-                features.append(u"dep:CandDependentsDependency-"+t)
-            if g==place[0]:
-                features.append(u"dep:CandGovernorsDependency-"+t)
-            if d==dependency[0]:
-                features.append(u"dep:OrigGovernorsDep-"+t)
-
-            #Lemma of cc
-            #same governor -jump
-            if g==dependency[1] and t==u"cc":
-                lemma=sent[d-1][2]
-                features.append(u"dep:CCtoken-"+lemma) 
-            #different gov, same dependent -jump
-            if g==dependency[0] and t==u"cc":
-                lemma=sent[d-1][2]
-                features.append(u"dep:CCtoken-"+lemma) 
+        for dep in tree.childs[g]:
+            if dep.flag!=u"CC": 
+                features.add(u"dep:CandGovernorsDependency-"+dep.dtype)
+            
+        for dep in tree.childs[d]:
+            if dep.flag!=u"CC":
+                features.add(u"dep:CandDependentsDependency-"+dep.dtype)
+        for dep in tree.childs[dependency.gov]:
+            if dep.flag!=u"CC" and dep.dep!=dependency.dep:
+                features.add(u"dep:OrigGovernorsDep-"+dep.dtype)
+                if dep.dtype==u"cc":
+                    features.add(u"dep:CCtoken-"+dep.dep.lemma)
+            if dep.dtype==u"conj":
+                conjs+=1
+        for dep in tree.childs[dependency.dep]:
+            if dep.dtype==u"cc":
+                features.add(u"dep:CCtoken-"+dep.dep.lemma)
+            elif dep.dtype==u"conj":
+                conjs+=1
         
-            # conjs
-            if g==dependency[0] and t==u"conj": conjs+=1
-            elif g==dependency[1] and t==u"conj": conjs+=1
-        features.append(u"calc:conjs-"+unicode(conjs))
+
+        assert conjs>0
+        features.add(u"calc:conjs-"+unicode(conjs))
         
         
         ## TOKEN RELATED (prefic:tok) ##
         
         
         # gov of candidate
-        token=sent[place[0]-1] #token is gov of candidate dependency
-        give_morpho(token,features,u"govtok:")
+        give_morpho(g,features,u"govtok:")
               
         # dep of candidate
-        token=sent[place[1]-1]
-        give_morpho(token,features,u"deptok:")
+        give_morpho(d,features,u"deptok:")
 
         # gov of original (if different than gov of candidate)
-        if dependency[0]!=place[0]:
-            token=sent[dependency[0]-1]
-            give_morpho(token,features,u"Origgovtok:")
-                
+        if dependency.gov!=g:
+            give_morpho(dependency.gov,features,u"Origgovtok:")
 
         # dep of original (if different than dep of candidate)
-        if dependency[1]!=place[1]:
-            token=sent[dependency[1]-1]
-            give_morpho(token,features,u"Origdeptok:")
-
-
-
-        #FG --- same here
-        lemma=sent[place[1]-1][2]
-        features.append(u"deptok:dep_token-"+lemma)
+        if dependency.dep!=d:
+            give_morpho(dependency.dep,features,u"Origdeptok:")
         
-
-        ## CALCULATIONS (prefix:calc)
-        
-        #how many tokens between place-gov and place-dep
-        #keep in mind that distancies differs depending the genre (vrt. jrc vs. hki) 
-        #if place[0]>place[1]: features.append(u"calc:lengthOfJump:"+unicode(place[0]-place[1]))
-        #else: features.append(u"calc:lengthOfJump:"+unicode(place[1]-place[0]))
-            
-        #how many items are being coordinated (how many conjs going from same place)
         
         
         ## CREATE ALL PAIRS ##
-        features=set(features) #FG: so why isn't features a set to begin with? -> if there are features with weights -> dict is the way to go
-        features=createAllPairs(sorted(features)) #Don't sort here
+        features=createAllPairs(features)
 
         return features
 
@@ -131,26 +112,28 @@ class RelFeatures:
     def __init__(self):
         pass
     
-    # dep:(g,d), deps: GS deps deleted
-    def createFeatures(self,dep,deps,sent):
-        features=[]
-        features.append(u"DummyFeature")
+    def create(self,g,d,tree):
+        """
+        g: Token()
+        d: Token()
+        tree: Tree()
+        """
+        features=set()
+        features.add(u"DummyFeature")
         
         
-        token=sent[dep[1]-1] #token is a dep of candidate dependency (relative pronoun)
-        give_morpho(token,features,u"deptok:")
-        
-        token=sent[dep[0]-1] #token is gov of candidate dependency
-        give_morpho(token,features,u"govtok:")
-
+        give_morpho(d,features,u"deptok:")
+        give_morpho(g,features,u"govtok:")
 
         ## DEPENDENCIES (governed by deptok/govtok):
-        for g,d,t in deps:
-            if g==dep[1]: features.append(u"dep:DependentsDependency-"+t)
-            if g==dep[0] and t!=u"rel": features.append(u"dep:GovernorsDependency-"+t)
+        for dep in tree.childs[g]:
+            if dep.flag!=u"BASE" or dep.dtype==u"rel": continue
+            features.add(u"dep:GovernorsDependency-"+dep.dtype)
+        for dep in tree.childs[d]:
+            if dep.flag!=u"BASE": continue
+            features.add(u"dep:DependentsDependency-"+dep.dtype)
             
-        features=set(features)
-        features=createAllPairs(sorted(features))
+        features=createAllPairs(features)
         
         return features
     
@@ -161,14 +144,14 @@ class RelFeatures:
 
 #Takes features and creates all possible pairs (f1f1, f1f2, f1f3, f2f2...)
 def createAllPairs(features):
-    moreFeatures=[] ##FG: set
-    features.sort()
+    moreFeatures=set()
+    features=sorted(features)
     f_index=0
     #xrange
     while f_index<len(features):
         for i in xrange(f_index,len(features)):
             new_feature=features[f_index]+features[i]
-            moreFeatures.append(new_feature)
+            moreFeatures.add(new_feature)
         f_index+=1
     return moreFeatures
 
@@ -177,7 +160,7 @@ def createAllPairs(features):
 cats=set([u"CASE",u"NUM",u"SUBCAT",u"PRS",u"VOICE",u"INF"])
 def give_morpho(token,f_list,prefix):
     """
-    token is a one conll line
+    token: Token()
     """
 
     #FG: make these into sets and move it out of the function
@@ -186,13 +169,10 @@ def give_morpho(token,f_list,prefix):
     #POSlist=[u"N",u"V",u"Adv",u"A",u"Num",u"Pron",u"Interj",u"C",u"Adp",u"Pcle",u"Punct",u"Null",u"Trash",u"Symb",u"Foreign"]
     #FeatList=[u"Nom",u"Gen",u"Par",u"Tra",u"Ess",u"Ine",u"Ela",u"Ill",u"Ade",u"Abl",u"All",u"Ins",u"Abe",u"Com"]
 
-    lemma=token[2]
-    pos=token[4]
-    reading=token[6]
 
-    f_list.append(prefix+u"Lemma-"+lemma)
-    f_list.append(prefix+u"POS-"+pos)
-    tags=reading.split(u"|")
+    f_list.add(prefix+u"Lemma-"+token.lemma)
+    f_list.add(prefix+u"POS-"+token.pos)
+    tags=token.feat.split(u"|")
     cat=None
     for tag in tags:
         if tag==u"_":continue
@@ -200,34 +180,25 @@ def give_morpho(token,f_list,prefix):
         if u"_" in tag:
             cols=tag.split(u"_",1)
             cat,tag=cols[0],cols[1]
-#            if parts[0] in cats:
-#                tag=tag.replace(parts[0]+u"_",u"",1)
-#            else: continue
         if (cat is not None) and (cat in cats):
-            f_list.append(prefix+u"Feat-"+tag)
-
-
-
-#Writes the textfile, which has to be later converted to numbers and feed to svm.
-def writeData(textfile,klass,features):
-    features_str=u""
-    for feature in features:
-        features_str+=u" "
-        features_str+=feature
-    textfile.write(klass+features_str+"\n")
+            f_list.add(prefix+u"Feat-"+tag)
+            cat=None
 
 
 #Takes a sourcefile(features_textfile) and converts that to numbers
 #if loadDict == True, permission to load cPickled dict from disc and use it.
 #if it's False, do not load dictionary but create a new and store it to disc
-def convert_toNumbers(loadDict,source,target,dir):
+def convert_toNumbers(loadDict,task,dir):
     if loadDict:
-        f=codecs.open(dir+"/feature_num_dictionary.pkl","rb")
-        featureDict=cPickle.load(f)
-        f.close()
-    else: featureDict={}
-    sourcefile=codecs.open(source,"rt","utf-8")
-    targetfile=codecs.open(target,"wt","utf-8")
+        with open(os.path.join(dir,task,u"fnums.pkl"),"r") as f:
+            featureDict=json.load(f)
+        with open(os.path.join(dir,task,u"classes.pkl"),"r") as f:
+            classDict=json.load(f)
+    else:
+        featureDict={}
+        classDict={}
+    sourcefile=codecs.open(os.path.join(dir,task,u"train.txt"),"rt","utf-8")
+    targetfile=codecs.open(os.path.join(dir,task,u"train.num"),"wt","utf-8")
     regex=re.compile(u"\:[0-9]+$")
     for line in sourcefile:
         features=[]
@@ -239,12 +210,14 @@ def convert_toNumbers(loadDict,source,target,dir):
         f_weight=1/(math.sqrt(len(features)))
         features.sort()
         features_str=u" ".join(unicode(feature)+u":"+unicode(f_weight) for feature in features)
-        targetfile.write(columns[0]+u" "+features_str+"\n")
+        cNumber=classDict.setdefault(columns[0], len(classDict)+1)
+        targetfile.write(unicode(cNumber)+u" "+features_str+"\n")
     sourcefile.close()
     targetfile.close()
     if loadDict==False:
-        f=codecs.open(dir+"/feature_num_dictionary.pkl","wb")
-        cPickle.dump(featureDict,f,-1)
-        f.close()
+        with open(os.path.join(dir,task,"fnums.pkl"),"w") as f:
+            json.dump(featureDict,f)
+        with open(os.path.join(dir,task,"classes.pkl"),"w") as f:
+            json.dump(classDict,f)
 
 
