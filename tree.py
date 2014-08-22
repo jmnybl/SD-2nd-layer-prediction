@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from collections import defaultdict,namedtuple
 import codecs
-import copy
 import sys
 
 CoNLLFormat=namedtuple("CoNLLFormat",["ID","FORM","LEMMA","POS","FEAT","HEAD","DEPREL"])
@@ -39,11 +38,11 @@ class Tree(object):
     def __init__(self,sent):
         self.tokens=[] #[Token(),...]
         self.childs=defaultdict(lambda:[]) #{token():[dep(),...])#
-        self.govs=defaultdict(lambda:[]) #{token():[dep(),...])# # basedeps included or not...?
+        self.govs=defaultdict(lambda:[]) #{token():[dep(),...])#
         self.basedeps={} #[deptoken():Dep()]
         self.deps=[]
         self.conjs=[] # [Dep(),...]
-        self.rels=[]
+        self.rels=[] # [Dep(),...]
         self.subjs=defaultdict(lambda:[]) #{govtoken():[dep(),...])#
         self.from_conll(sent)
 
@@ -73,28 +72,30 @@ class Tree(object):
                 for idx,(gov,dtype) in enumerate(zip(govs,deprels)):
                     if int(gov)==0:
                         continue
-                    gov=self.tokens[int(gov)-1]
+                    gov_token=self.tokens[int(gov)-1]
                     if idx==0:
-                        dependency=Dep(gov,dep,dtype,flag=u"BASE")
+                        dependency=Dep(gov_token,dep,dtype,flag=u"BASE")
                     else:
+                        if (u"rel" in deprels) and dtype!=u"rel":
+                            for gov2,dtype2 in zip(govs,deprels):
+                                if dtype2==u"rel" and gov2==gov:
+                                    dtype=u"rel&"+dtype
+                                    break
                         if (dtype==u"xsubj" or dtype==u"xsubj-cop") and (u"conj" not in deprels): # TODO: jumped xsubj?
                             flag=u"XS"
-                        elif u"rel" in deprels:
+                        elif u"&" in dtype: # TODO: jumped rel
                             flag=u"REL"
                         else:
                             flag=u"CC"
-                        dependency=Dep(gov,dep,dtype,flag)
+                        dependency=Dep(gov_token,dep,dtype,flag)
                     self.add_dep(dependency)
             
-            
-            
-
 
     def add_dep(self,dependency):
         self.deps.append(dependency)
         if dependency.flag==u"BASE":
             self.basedeps[dependency.dep]=dependency
-        self.childs[dependency.gov].append(dependency) # TODO: dep or token
+        self.childs[dependency.gov].append(dependency)
         self.govs[dependency.dep].append(dependency)
         if dependency.dtype==u"rel":
             self.rels.append(dependency)
@@ -128,13 +129,13 @@ class Tree(object):
                 deprels=u"ROOT"
             else:
                 govs=u",".join(str(dep.gov.index+1) for dep in self.govs[token])
-                deprels=u",".join(dep.dtype for dep in self.govs[token])
+                deprels=u",".join(dep.dtype.split(u"&",1)[-1] for dep in self.govs[token])
             line[form.HEAD]=govs
             line[form.DEPREL]=deprels
             sent.append(line)
         for line in sent:
-            print (u"\t".join(c for c in line)).encode(u"utf-8")
-        print      
+            print >> sys.stdout, (u"\t".join(c for c in line)).encode(u"utf-8")
+        print >> sys.stdout      
 
 
 class Token(object):
@@ -169,6 +170,9 @@ class Dep(object):
         self.flag=flag
 
     def __str__(self):
+        return (self.gov.text+u"--"+self.dep.text+u"--"+self.dtype+u"--"+self.flag).encode(u"utf-8")
+
+    def __repr__(self):
         return (self.gov.text+u"--"+self.dep.text+u"--"+self.dtype+u"--"+self.flag).encode(u"utf-8")
 
 

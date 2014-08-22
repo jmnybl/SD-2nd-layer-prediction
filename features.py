@@ -2,7 +2,6 @@
 import codecs
 import math
 import json
-import collections
 import re
 import sys
 import os
@@ -84,18 +83,15 @@ class JumpFeatures:
         
         # gov of candidate
         give_morpho(g,features,u"govtok:")
-              
         # dep of candidate
         give_morpho(d,features,u"deptok:")
 
         # gov of original (if different than gov of candidate)
         if dependency.gov!=g:
             give_morpho(dependency.gov,features,u"Origgovtok:")
-
         # dep of original (if different than dep of candidate)
         if dependency.dep!=d:
             give_morpho(dependency.dep,features,u"Origdeptok:")
-        
         
         
         ## CREATE ALL PAIRS ##
@@ -121,7 +117,6 @@ class RelFeatures:
         features=set()
         features.add(u"DummyFeature")
         
-        
         give_morpho(d,features,u"deptok:")
         give_morpho(g,features,u"govtok:")
 
@@ -146,13 +141,10 @@ class RelFeatures:
 def createAllPairs(features):
     moreFeatures=set()
     features=sorted(features)
-    f_index=0
-    #xrange
-    while f_index<len(features):
+    for f_index in xrange(len(features)):
         for i in xrange(f_index,len(features)):
             new_feature=features[f_index]+features[i]
             moreFeatures.add(new_feature)
-        f_index+=1
     return moreFeatures
 
   
@@ -162,13 +154,6 @@ def give_morpho(token,f_list,prefix):
     """
     token: Token()
     """
-
-    #FG: make these into sets and move it out of the function
-    #cats=[u"CASE",u"NUM",u"SUBCAT",u"PRS",u"VOICE",u"INF"]
-
-    #POSlist=[u"N",u"V",u"Adv",u"A",u"Num",u"Pron",u"Interj",u"C",u"Adp",u"Pcle",u"Punct",u"Null",u"Trash",u"Symb",u"Foreign"]
-    #FeatList=[u"Nom",u"Gen",u"Par",u"Tra",u"Ess",u"Ine",u"Ela",u"Ill",u"Ade",u"Abl",u"All",u"Ins",u"Abe",u"Com"]
-
 
     f_list.add(prefix+u"Lemma-"+token.lemma)
     f_list.add(prefix+u"POS-"+token.pos)
@@ -190,9 +175,9 @@ def give_morpho(token,f_list,prefix):
 #if it's False, do not load dictionary but create a new and store it to disc
 def convert_toNumbers(loadDict,task,dir):
     if loadDict:
-        with open(os.path.join(dir,task,u"fnums.pkl"),"r") as f:
+        with open(os.path.join(dir,task,u"fnums.json"),u"r") as f:
             featureDict=json.load(f)
-        with open(os.path.join(dir,task,u"classes.pkl"),"r") as f:
+        with open(os.path.join(dir,task,u"classes.json"),u"r") as f:
             classDict=json.load(f)
     else:
         featureDict={}
@@ -215,9 +200,9 @@ def convert_toNumbers(loadDict,task,dir):
     sourcefile.close()
     targetfile.close()
     if loadDict==False:
-        with open(os.path.join(dir,task,"fnums.pkl"),"w") as f:
+        with open(os.path.join(dir,task,"fnums.json"),u"w") as f:
             json.dump(featureDict,f)
-        with open(os.path.join(dir,task,"classes.pkl"),"w") as f:
+        with open(os.path.join(dir,task,"classes.json"),u"w") as f:
             json.dump(classDict,f)
 
 

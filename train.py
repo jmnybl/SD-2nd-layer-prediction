@@ -10,8 +10,6 @@ from features import convert_toNumbers
 import json
 import time
 
-SCRIPTDIR=os.path.dirname(os.path.abspath(__file__))
-
 
 def train(args):
     """
@@ -19,17 +17,17 @@ def train(args):
     """
 
     if not args.no_ccprop:
-        if not os.path.exists(os.path.join(SCRIPTDIR,args.output,u"ccprop")):
-            os.makedirs(os.path.join(SCRIPTDIR,args.output,u"ccprop"))
-        cc_trainf=codecs.open(os.path.join(SCRIPTDIR,args.output,u"ccprop","train.txt"),"wt",u"utf-8")
+        if not os.path.exists(os.path.join(args.output,u"ccprop")):
+            os.makedirs(os.path.join(args.output,u"ccprop"))
+        cc_trainf=codecs.open(os.path.join(args.output,u"ccprop","train.txt"),"wt",u"utf-8")
         ccprop=second_layer.ConjPropagation()
     else:
         ccprop=None
         
     if not args.no_rel:
-        if not os.path.exists(os.path.join(SCRIPTDIR,args.output,u"rel")):
-            os.makedirs(os.path.join(SCRIPTDIR,args.output,u"rel"))
-        rel_trainf=codecs.open(os.path.join(SCRIPTDIR,args.output,u"rel","train.txt"),"wt",u"utf-8")
+        if not os.path.exists(os.path.join(args.output,u"rel")):
+            os.makedirs(os.path.join(args.output,u"rel"))
+        rel_trainf=codecs.open(os.path.join(args.output,u"rel","train.txt"),"wt",u"utf-8")
         rel=second_layer.Relativizers()
     else:
         rel=None

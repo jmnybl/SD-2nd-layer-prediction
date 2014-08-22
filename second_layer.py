@@ -7,7 +7,7 @@ import codecs
 import glob
 import sys
 import os
-import cPickle
+import json
 import math
 import subprocess # needed for pigz
 import gzip
@@ -18,52 +18,58 @@ from features import JumpFeatures,RelFeatures
 import numpy as np
 
 
-JUMPCLASSES={u"DontJump":1,u"adpos":2,u"advcl":3,u"advmod":4,u"acomp":5,u"amod":6,u"appos":7,u"aux":8,u"cc":9,u"ccomp":10,u"compar":11,
-u"comparator":12,u"complm":13,u"conj":14,u"cop":15,u"csubj":16,u"csubj-cop":17,u"dep":18,u"det":19,u"dobj":20,u"ellipsis":21,u"gobj":22,u"iccomp":23,
-u"infmod":24,u"mark":25,u"name":26,u"neg":27,u"nn":28,u"nommod":29,u"nsubj":30,u"nsubj-cop":31,u"num":32,u"number":33,u"parataxis":34,u"partmod":35,u"poss":36,u"preconj":37,u"prt":38,u"quantmod":39,u"rcmod":40,
-u"rel":41,u"xcomp":42,u"xsubj":43,u"gsubj":44,u"nommod-own":45,u"intj":46,u"punct":47,u"auxpass":48,u"voc":49,u"xsubj-cop":50,u"rel&nsubj":51,u"rel&dobj":52,u"rel&nommod":53,u"rel&nsubj-cop":54,u"rel&advmod":55,u"rel&advcl":56,u"rel&nommod-own":57,u"rel&partmod":58,u"rel&poss":59,u"rel&xcomp":60} # TODO: create this during training and pickle
+#JUMPCLASSES={u"DontJump":1,u"adpos":2,u"advcl":3,u"advmod":4,u"acomp":5,u"amod":6,u"appos":7,u"aux":8,u"cc":9,u"ccomp":10,u"compar":11,
+#u"comparator":12,u"complm":13,u"conj":14,u"cop":15,u"csubj":16,u"csubj-cop":17,u"dep":18,u"det":19,u"dobj":20,u"ellipsis":21,u"gobj":22,u"iccomp":23,
+#u"infmod":24,u"mark":25,u"name":26,u"neg":27,u"nn":28,u"nommod":29,u"nsubj":30,u"nsubj-cop":31,u"num":32,u"number":33,u"parataxis":34,u"partmod":35,u"poss":36,u"preconj":37,u"prt":38,u"quantmod":39,u"rcmod":40,
+#u"rel":41,u"xcomp":42,u"xsubj":43,u"gsubj":44,u"nommod-own":45,u"intj":46,u"punct":47,u"auxpass":48,u"voc":49,u"xsubj-cop":50,u"rel&nsubj":51,u"rel&dobj":52,u"rel&nommod":53,u"rel&nsubj-cop":54,u"rel&advmod":55,u"rel&advcl":56,u"rel&nommod-own":57,u"rel&partmod":58,u"rel&poss":59,u"rel&xcomp":60} # TODO: create this during training and pickle
 
-RELCLASSES={u"nsubj":1,u"dobj":2,u"nommod":3,u"nsubj-cop":4,u"advmod":5,u"advcl":6,u"nommod-own":7,u"partmod":8,u"poss":9,u"xcomp":10}
+#RELCLASSES={u"nsubj":1,u"dobj":2,u"nommod":3,u"nsubj-cop":4,u"advmod":5,u"advcl":6,u"nommod-own":7,u"partmod":8,u"poss":9,u"xcomp":10}
 
 class Model(object):
 
-    def __init__(self,modelf,featf,classes):
-        self.klasses=classes
-        self.vector=None ## readModel() fills these...
+    def __init__(self,dir,task):
+        self.klasses=None ## readModel() fills these...
+        self.vector=None 
         self.base_features=None
         self.fDict=None
         self.number2klass=None
-        self.readModel(modelf,featf)
+        self.readModel(dir,task)
 
-    def readModel(self,modelFile,fFile):
-        print >> sys.stderr, "Reading SVM model..."
-        f=codecs.open(modelFile,u"rt",u"utf-8")
-        self.vector=None
-        for line in f:
-            line=line.strip()
-            if u"number of base features" in line:
-                baseFs=int(line.split()[0])
-                self.base_features=baseFs
-            elif u"highest feature index" in line:
-                self.vector=np.zeros(int(line.split()[0]))
-            elif u"qid:0" in line:
-                cols=line.split()
-                del cols[0:2]
-                del cols[-1]
-                for col in cols:
-                    parts=col.split(u":")
-                    fNum=int(parts[0])
-                    value=float(parts[1])
-                    self.vector[fNum]=value
-        f.close()
-        print >> sys.stderr,"Model:",modelFile
-        f=codecs.open(fFile,"rb")
-        self.fDict=cPickle.load(f)
-        f.close()
-        print >> sys.stderr,"Feature dictionary:",fFile
-#        f=codecs.open(klassFile,"rb")
-#        klasses=cPickle.load(f)
-#        f.close()
+    def readModel(self,dir,task):
+        print >> sys.stderr, u"Reading SVM model..."
+        if os.path.exists(os.path.join(dir,task,"vector.npy")) and os.path.exists(os.path.join(dir,task,"basef.json")):
+            self.vector=np.load(os.path.join(dir,task,"vector.npy"))
+            with open(os.path.join(dir,task,u"basef.json"),u"r") as f:
+                self.base_features=json.load(f)
+            print >> sys.stderr,u"Model:",os.path.join(dir,task,u"vector.npy")
+        else:
+            f=codecs.open(os.path.join(dir,task,u"model.svm"),u"rt",u"utf-8")
+            self.vector=None
+            for line in f:
+                line=line.strip()
+                if u"number of base features" in line:
+                    baseFs=int(line.split()[0])
+                    self.base_features=baseFs
+                elif u"highest feature index" in line:
+                    self.vector=np.zeros(int(line.split()[0]))
+                elif u"qid:0" in line:
+                    cols=line.split()
+                    del cols[0:2]
+                    del cols[-1]
+                    for col in cols:
+                        parts=col.split(u":")
+                        fNum=int(parts[0])
+                        value=float(parts[1])
+                        self.vector[fNum]=value
+            f.close()
+            np.save(os.path.join(dir,task,"vector.npy"),np.frombuffer(self.vector)) # save vector so we don't have to compile it again
+            with open(os.path.join(dir,task,u"basef.json"),u"w") as f:
+                json.dump(self.base_features,f)
+            print >> sys.stderr,u"Model:",os.path.join(dir,task,u"model.svm")
+        with open(os.path.join(dir,task,u"fnums.json"),u"r") as f:
+            self.fDict=json.load(f)
+        with open(os.path.join(dir,task,u"classes.json"),u"r") as f:
+            self.klasses=json.load(f)
         ## convert from key:ArgName,value:klassNum to key:klassNum,value:ArgName
         self.number2klass={}
         for key,value in self.klasses.iteritems():
@@ -76,7 +82,6 @@ class Model(object):
             feat=self.fDict.get(feature)
             if feat is not None:
                 fnums.append((feat,1.0))
-
         maxscore=None
         klassnum=None
         for i in xrange(1,len(self.klasses)):
@@ -92,32 +97,6 @@ class Model(object):
         return klassnum
 
 
-
-
-
-#CoNLLFormat=namedtuple("CoNLLFormat",["ID","FORM","LEMMA","POS","FEAT","HEAD","DEPREL"])
-
-##Column lists for the various formats
-#formats={"conll09":CoNLLFormat(0,1,2,4,6,8,10)}
-
-
-#def create_tree(sent,conll_format=u"conll09"):
-#    """ returns a key:(g,d) value:[type] dictionary"""
-#    form=formats[conll_format]
-#    base_tree=collection.defaultdict(lambda:[])
-#    full_tree=collection.defaultdict(lambda:[])
-#    for tok in sent:
-#        if tok[form.HEAD]==u"0": continue # skip root
-#        govs=tok[form.HEAD].split(u",")
-#        dtypes=tok[form.DEPREL].split(u",")
-#        dep=int(tok[0])
-#        i=0
-#        for gov,dtype in zip(govs,dtypes):
-#            if i<1:
-#                base_tree[(int(gov),dep)].append(dtype)
-#            full_tree[(int(gov),dep)].append(dtype)
-#            i+=1
-#    return base_tree,full_tree
 
 def is_dep(g,d,tree):
     """ Check if there is dependency between g and d, and return list of types if found. """
@@ -190,15 +169,18 @@ class ConjPropagation(object):
     def learn(self,tree,outfile):
         for dep in tree.deps:
             if dep.flag!=u"CC" and self.can_jump(dep,tree):
-                if dep.dtype==u"rel" and len(tree.govs[dep.dep])>1:
-                    continue # TODO: do not skip post-processed rel
+                if dep.dtype==u"rel":
+                    continue
                 new_deps=self.gather_all_jumps(dep.gov,dep.dep,tree)
                 for g,d in new_deps:
-                    types=is_dep(g,d,tree)
+                    types=is_dep(g,d,tree)                    
                     if not types:
                         klass=u"no"
                     elif len(types)==2 and u"rel" in types:
-                        klass=u"&".join(t for t in types)
+                        for t in types:
+                            if t!=u"rel":
+                                klass=t
+                                break
                     else:
                         assert len(types)<2
                         klass=types[0]
@@ -211,23 +193,20 @@ class ConjPropagation(object):
         new=[]
         for dep in tree.deps:
             if self.can_jump(dep,tree):
-                if dep.dtype==u"rel" and len(tree.govs[dep.dep])>1:
+                if dep.dtype==u"rel":
                     continue # this is just the rel, we want the secondary function
                 new_deps=self.gather_all_jumps(dep.gov,dep.dep,tree)
                 for g,d in new_deps:
                     features=self.features.create(dep,g,d,tree) #...should return (name,value) tuples
-                    klass=self.model.predict_one(features)      
-                    if klass==1: continue
+                    klass=self.model.predict_one(features)
                     klass_str=self.model.number2klass[klass]
-                    if u"&" in klass_str: # this is merged rel, split
-                        rel,sec=klass_str.split(u"&",1)
-                        dependency=Dep(g,d,rel,flag=u"CC")
+                    if klass_str==u"no": continue
+                    if u"&" in klass_str: # this is merged rel
+                        print >> sys.stderr, klass_str
+                        dependency=Dep(g,d,u"rel",flag=u"CC") # add also rel
                         new.append(dependency)
-                        dependency=Dep(g,d,sec,flag=u"CC")
-                        new.append(dependency)
-                    else:
-                        dependency=Dep(g,d,klass_str,flag=u"CC")
-                        new.append(dependency)
+                    dependency=Dep(g,d,klass_str,flag=u"CC")
+                    new.append(dependency)
         for dep in new:
             tree.add_dep(dep)
 
@@ -244,8 +223,11 @@ class Relativizers(object):
             features=self.features.create(rel.gov,rel.dep,tree)
             types=is_dep(rel.gov,rel.dep,tree)
             if len(types)<2: continue # post-processed dependency, do not use in training
-            klass=types[1]
-            writeData(outfile,klass,features)
+            for dtype in types:
+                if dtype==u"rel": continue
+                klass=dtype.split(u"&",1)[1]
+                writeData(outfile,klass,features)
+                break
 
 
     def post_process_rel(self,g,d,t,tree):
@@ -267,7 +249,7 @@ class Relativizers(object):
         for rel in tree.rels:
             features=self.features.create(rel.gov,rel.dep,tree)
             klass=self.model.predict_one(features)
-            klass_str=self.model.number2klass[klass]
+            klass_str=u"rel&"+self.model.number2klass[klass]
             g,d,t=self.post_process_rel(rel.gov,rel.dep,klass_str,tree)
             dependency=Dep(g,d,t,flag=u"REL")
             #print dependency
@@ -309,80 +291,5 @@ class Xsubjects(object):
         for dep in new: # can't add these while iterating the same list, so these need to be added here
             tree.add_dep(dep)
 
-
-#def merge_deps(sent,extra,conll_format=u"conll09"):
-#    """ 
-#    Sent is a list of lists (conll lines),
-#    extra is a dictionary {key:dependent, value:list of (gov,dtype)} of new dependencies
-#    """
-#    # TODO: fill both columns ( HEAD and PHEAD, ...? )
-#    form=formats[conll_format]
-#    for key,value in extra.iteritems():
-#        sent[key-1][form.HEAD]+=u","+u",".join(str(c[0]) for c in value)
-#        sent[key-1][form.DEPREL]+=u","+u",".join(str(c[1]) for c in value)
-#    return sent
-
-
-#if __name__==u"__main__":
-
-#    from optparse import OptionParser
-#    parser = OptionParser()
-#    parser.add_option("-f","--file",dest="f",default=None,help="Input file.")
-#    parser.add_option("-o","--out",dest="o",default=None,help="Output file.")
-#    (options, args) = parser.parse_args()
-#    
-#    if options.f is None:
-#        print >> sys.stderr, "No input file."
-#        sys.exit(1)
-
-#    if options.o is None:
-#        fName,end=options.f.rsplit(u".",1)
-#        out=fName+u"_w_sec."+end
-#    else: out=options.o
-
-#    print >> sys.stderr, "Output file:",out
-#        
-#    
-#    relmodel=Model(u"models/model_rel",u"models/feature_dict_rel.pkl",RELCLASSES)
-#    relfunc=Relativizers(relmodel)
-#    #jumpmodel=Model(u"models/model_jump",u"models/feature_dict_jump.pkl",JUMPCLASSES)
-#    ccprop=ConjPropagation()
-#    
-#    xsubj=Xsubjects()
-
-#    reader=FileReader()
-#    writer=FileWriter(out)
-#    tsent=0
-
-#    f=codecs.open(u"rel_train.txt",u"wt",u"utf-8")
-#    f2=codecs.open(u"cc_train.txt",u"wt",u"utf-8")
-
-#    for sent in reader.conllReader(options.f):
-#        if len(sent)>1:
-
-#            tree=Tree(sent)
-
-#            relfunc.learn(tree,f)
-
-#            ccprop.learn(tree,f2)            
-
-#            #relfunc.predict(tree) # rel
-
-#            #xsubj.predict(tree) # xsubj
-
-#            #ccprop.predict(tree) # jump
-#            
-#            #xsubj.predict(tree) # xsubj
-
-#            #tree.tree_to_conll()
-
-#        #writer.write_sent(sent)
-#        tsent+=1
-#        #if tsent>50000: break
-#    print >> sys.stderr, "Processed sentences:",tsent
-
-#    f.close()
-#    f2.close()
-        
                 
 
