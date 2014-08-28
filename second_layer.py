@@ -1,8 +1,6 @@
 #-*- coding: utf-8 -*-
 
 
-import time
-
 import codecs
 import glob
 import sys
@@ -11,19 +9,11 @@ import json
 import math
 import subprocess # needed for pigz
 import gzip
-from collections import defaultdict,namedtuple
 
 from tree import Tree,Dep
 from features import JumpFeatures,RelFeatures
 import numpy as np
 
-
-#JUMPCLASSES={u"DontJump":1,u"adpos":2,u"advcl":3,u"advmod":4,u"acomp":5,u"amod":6,u"appos":7,u"aux":8,u"cc":9,u"ccomp":10,u"compar":11,
-#u"comparator":12,u"complm":13,u"conj":14,u"cop":15,u"csubj":16,u"csubj-cop":17,u"dep":18,u"det":19,u"dobj":20,u"ellipsis":21,u"gobj":22,u"iccomp":23,
-#u"infmod":24,u"mark":25,u"name":26,u"neg":27,u"nn":28,u"nommod":29,u"nsubj":30,u"nsubj-cop":31,u"num":32,u"number":33,u"parataxis":34,u"partmod":35,u"poss":36,u"preconj":37,u"prt":38,u"quantmod":39,u"rcmod":40,
-#u"rel":41,u"xcomp":42,u"xsubj":43,u"gsubj":44,u"nommod-own":45,u"intj":46,u"punct":47,u"auxpass":48,u"voc":49,u"xsubj-cop":50,u"rel&nsubj":51,u"rel&dobj":52,u"rel&nommod":53,u"rel&nsubj-cop":54,u"rel&advmod":55,u"rel&advcl":56,u"rel&nommod-own":57,u"rel&partmod":58,u"rel&poss":59,u"rel&xcomp":60} # TODO: create this during training and pickle
-
-#RELCLASSES={u"nsubj":1,u"dobj":2,u"nommod":3,u"nsubj-cop":4,u"advmod":5,u"advcl":6,u"nommod-own":7,u"partmod":8,u"poss":9,u"xcomp":10}
 
 class Model(object):
 
@@ -152,20 +142,6 @@ class ConjPropagation(object):
             return recs
 
 
-#    def merge_rels(self,tree):
-#        merged=[]
-#        rels=[]
-#        merged_tree={}
-#        for g,d,t in tree.iteritems():
-#            if u"rel" in t and len(t)>1:
-#                assert len(t)<2
-#                rels.append((g,d))
-#                dtype=u"&".join(ty for ty in t)
-#                merged_tree[(g,d)]=[dtype]
-#            else:
-#                merged_tree[(g,d)]=t
-#        return merged_tree
-
     def learn(self,tree,outfile):
         for dep in tree.deps:
             if dep.flag!=u"CC" and self.can_jump(dep,tree):
@@ -189,7 +165,10 @@ class ConjPropagation(object):
                     
 
     def predict(self,tree):
-        """ Jump one conll sentence. """
+        """ Jump one tree. """
+        if self.model is None:
+            print >> sys.stderr, u"no model found"
+            sys.exit(1)
         new=[]
         for dep in tree.deps:
             if self.can_jump(dep,tree):

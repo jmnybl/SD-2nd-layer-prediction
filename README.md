@@ -1,4 +1,4 @@
 SD-2nd-layer-prediction
 =======================
 
-A machine learning tool to predict 2nd layer dependencies for Finnish syntactic trees annotated based on Stanford Dependencies scheme.
+This is a machine learning tool for producing Finnish second layer dependencies as defined in the Turku Dependency Treebank. The syntactic representation follows the Stanford Dependencies scheme.
