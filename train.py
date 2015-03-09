@@ -34,7 +34,7 @@ def train(args):
     
     count=0
     print >> sys.stderr, "collecting training data"
-    for sent in read_conll(args.input):
+    for comments,sent in read_conll(args.input):
         t=tree.Tree(sent)
         if rel is not None:
             rel.learn(t,rel_trainf)

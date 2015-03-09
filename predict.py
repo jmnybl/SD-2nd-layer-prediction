@@ -28,13 +28,18 @@ def predict(args):
     
     print >> sys.stderr, "predicting"
     count=0
-    for sent in read_conll(args.input):
+    for comments,sent in read_conll(args.input):
         t=tree.Tree(sent)
         rel.predict(t)
         xs.predict(t)
         ccprop.predict(t)
         xs.predict(t)
-        t.tree_to_conll()
+        for comm in comments:
+            print >> sys.stdout, comm.encode(u"utf-8")
+        if args.no_conllu:
+            t.tree_to_conll()
+        else:
+            t.to_conllu()
         count+=1
         if count%100==0:
             print >> sys.stderr, count
@@ -45,7 +50,8 @@ def predict(args):
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Runs the second layer prediction. Outputs to stdout.')
-    parser.add_argument('model', nargs=1, help='Name of the model file.')
+    parser.add_argument('model', nargs=1, help='Name of the model directory.')
+    parser.add_argument('--no-conllu', dest='no_conllu', default=False, action="store_true", help='Do not output conllu, use conll09. Default: %(default)s')
     parser.add_argument('input', nargs='?', help='Input file name, or nothing for stdin')
     args = parser.parse_args()
     

@@ -16,19 +16,23 @@ def read_conll(inp):
         f=codecs.getreader("utf-8")(sys.stdin)
     else:
         f=inp
-
+    
+    comments=[]
     sent=[]
     for line in f:
         line=line.strip()
-        if not line or line.startswith(u"#"): #Do not rely on empty lines in conll files, ignore comments
-            continue 
-        if line.startswith(u"1\t") and sent: #New sentence, and I have an old one to yield
-            yield sent
+        if not line: # new sentence
+            if sent:
+                yield comments,sent
             sent=[]
-        sent.append(line.split(u"\t"))
+            comments=[]
+        elif line.startswith(u"#"): # comment
+            comments.append(line)
+        else: # normal line
+            sent.append(line.split(u"\t"))
     else:
         if sent:
-            yield sent
+            yield comments,sent
 
     if isinstance(inp,basestring):
         f.close() #Close it if you opened it
@@ -117,13 +121,16 @@ class Tree(object):
         sent=[]
         for token in self.tokens:
             line=[]
-            for i in xrange(11):
+            for i in xrange(14):
                 line.append(u"_")
             line[form.ID]=str(token.index+1)
             line[form.FORM]=token.text
             line[form.LEMMA]=token.lemma
+            line[form.LEMMA+1]=token.lemma # repeat everything...
             line[form.POS]=token.pos
+            line[form.POS+1]=token.pos
             line[form.FEAT]=token.feat
+            line[form.FEAT+1]=token.feat
             if not self.govs[token]:
                 govs=u"0"
                 deprels=u"ROOT"
@@ -131,11 +138,45 @@ class Tree(object):
                 govs=u",".join(str(dep.gov.index+1) for dep in self.govs[token])
                 deprels=u",".join(dep.dtype.split(u"&",1)[-1] for dep in self.govs[token])
             line[form.HEAD]=govs
+            line[form.HEAD+1]=govs
             line[form.DEPREL]=deprels
+            line[form.DEPREL+1]=deprels
             sent.append(line)
         for line in sent:
             print >> sys.stdout, (u"\t".join(c for c in line)).encode(u"utf-8")
-        print >> sys.stdout      
+        print >> sys.stdout    
+
+        
+    def to_conllu(self):
+        #["ID","FORM","LEMMA","POS","FEAT","HEAD","DEPREL"]
+        ID,FORM,LEMMA,CPOS,POS,FEAT,HEAD,DEPREL,DEPS,MISC=range(10)
+        sent=[]
+        for token in self.tokens:
+            line=[]
+            for _ in xrange(10):
+                line.append(u"_")
+            line[ID]=str(token.index+1)
+            line[FORM]=token.text
+            line[LEMMA]=token.lemma
+            line[CPOS]=token.pos
+            line[POS]=token.pos # TODO: full conllu support
+            line[FEAT]=token.feat # TODO: full conllu support
+            baselayer=self.basedeps.get(token,None)
+            if baselayer is None:
+                line[HEAD]=u"0"
+                line[DEPREL]=u"ROOT"
+            else:
+                line[HEAD]=str(baselayer.gov.index+1)
+                line[DEPREL]=baselayer.dtype
+            extradeps=[]
+            for d in self.govs.get(token,[]):
+                if d!=baselayer:
+                    extradeps.append((d.gov.index+1,d.dtype.split(u"&",1)[-1]))   
+            line[DEPS]=u"|".join(str(d[0])+u":"+d[1] for d in sorted(extradeps)) if extradeps else u"_"
+            sent.append(line)
+        for line in sent:
+            print >> sys.stdout, (u"\t".join(c for c in line)).encode(u"utf-8")
+        print >> sys.stdout  
 
 
 class Token(object):
@@ -168,6 +209,9 @@ class Dep(object):
         self.dep=dep
         self.dtype=dtype
         self.flag=flag
+
+    def __eq__(self,other):
+        return self.gov==other.gov and self.dep==other.dep and self.dtype==other.dtype and self.flag==other.flag
 
     def __str__(self):
         return (self.gov.text+u"--"+self.dep.text+u"--"+self.dtype+u"--"+self.flag).encode(u"utf-8")

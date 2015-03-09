@@ -23,7 +23,7 @@ class Model(object):
         self.base_features=None
         self.fDict=None
         self.number2klass=None
-        self.readModel(dir,task)
+        self.readModel(dir,task)       
 
     def readModel(self,dir,task):
         print >> sys.stderr, u"Reading SVM model..."
@@ -71,19 +71,21 @@ class Model(object):
         for feature in features:
             feat=self.fDict.get(feature)
             if feat is not None:
-                fnums.append((feat,1.0))
+                fnums.append(feat)
+        
+        w=1/(math.sqrt(len(fnums)))
+        
         maxscore=None
         klassnum=None
         for i in xrange(1,len(self.klasses)):
             score=0.0
             offset=((i-1)*self.base_features)
-            for fnum,value in fnums: # list of feature numbers
-                w=1/(math.sqrt(len(fnums)))
-                pos=offset+fnum # position in model.vector
-                score+=w*self.vector[pos]
-                if (maxscore is None) or maxscore<score:
-                    maxscore=score
-                    klassnum=i
+            for fnum in fnums: # list of feature numbers
+                dim=offset+fnum # position in model.vector
+                score+=w*self.vector[dim]
+            if (maxscore is None) or maxscore<score:
+                maxscore=score
+                klassnum=i
         return klassnum
 
 
@@ -181,7 +183,7 @@ class ConjPropagation(object):
                     klass_str=self.model.number2klass[klass]
                     if klass_str==u"no": continue
                     if u"&" in klass_str: # this is merged rel
-                        print >> sys.stderr, klass_str
+                        #print >> sys.stderr, klass_str
                         dependency=Dep(g,d,u"rel",flag=u"CC") # add also rel
                         new.append(dependency)
                     dependency=Dep(g,d,klass_str,flag=u"CC")
