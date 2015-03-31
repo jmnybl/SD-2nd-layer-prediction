@@ -153,7 +153,7 @@ class Tree(object):
             baselayer=self.basedeps.get(token,None)
             if baselayer is None:
                 line[form.HEAD]=u"0"
-                line[form.DEPREL]=u"ROOT"
+                line[form.DEPREL]=u"root"
             else:
                 line[form.HEAD]=str(baselayer.gov.index+1)
                 line[form.DEPREL]=baselayer.dtype
