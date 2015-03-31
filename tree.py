@@ -3,10 +3,10 @@ from collections import defaultdict,namedtuple
 import codecs
 import sys
 
-CoNLLFormat=namedtuple("CoNLLFormat",["ID","FORM","LEMMA","POS","FEAT","HEAD","DEPREL"])
+CoNLLFormat=namedtuple("CoNLLFormat",["ID","FORM","LEMMA","CPOS","POS","FEAT","HEAD","DEPREL","DEPS","MISC"])
 
 #Column lists for the various formats
-formats={"conll09":CoNLLFormat(0,1,2,4,6,8,10)}
+formats={"conll09":CoNLLFormat(0,1,2,4,4,6,8,10,12,12),"conllu":CoNLLFormat(0,1,2,3,4,5,6,7,8,9)}
 
 def read_conll(inp):
     """ Read conll format file and yield one sentence at a time as a list of lists of columns. If inp is a string it will be interpreted as filename, otherwise as open file for reading in unicode"""
@@ -46,52 +46,44 @@ class Tree(object):
         self.basedeps={} #[deptoken():Dep()]
         self.deps=[]
         self.conjs=[] # [Dep(),...]
-        self.rels=[] # [Dep(),...]
         self.subjs=defaultdict(lambda:[]) #{govtoken():[dep(),...])#
-        self.from_conll(sent)
+        self.from_conllu(sent)
 
     #Called from new_from_conll() classmethod
-    def from_conll(self,lines,conll_format="conll09"):    
-        """ Reads conll format and transforms it to a tree instance. `conll_format` is a format name
-            which will be looked up in the formats module-level dictionary"""
-        form=formats[conll_format] #named tuple with the column indices
+    def from_conllu(self,lines):    
+        """ Reads conllu format and transforms it to a tree instance. """
+        form=formats[u"conllu"] #named tuple with the column indices
         for i in xrange(0,len(lines)): # create tokens
             line=lines[i]
-            token=Token(i,line[form.FORM],pos=line[form.POS],feat=line[form.FEAT],lemma=line[form.LEMMA])
+            token=Token(i,line[form.FORM],cpos=line[form.CPOS],pos=line[form.POS],feat=line[form.FEAT],lemma=line[form.LEMMA])
             self.tokens.append(token)
 
         # fill syntax
         for line in lines:
-            govs=line[form.HEAD].split(u",")
-            dep=self.tokens[int(line[0])-1]
-            if len(govs)==1:
-                if int(govs[0])==0:
-                    continue
-                gov=self.tokens[int(govs[0])-1]
-                dtype=line[form.DEPREL]
-                dependency=Dep(gov,dep,dtype,flag=u"BASE")
-                self.add_dep(dependency)
-            else:
-                deprels=line[form.DEPREL].split(u",")
-                for idx,(gov,dtype) in enumerate(zip(govs,deprels)):
-                    if int(gov)==0:
-                        continue
-                    gov_token=self.tokens[int(gov)-1]
-                    if idx==0:
-                        dependency=Dep(gov_token,dep,dtype,flag=u"BASE")
-                    else:
-                        if (u"rel" in deprels) and dtype!=u"rel":
-                            for gov2,dtype2 in zip(govs,deprels):
-                                if dtype2==u"rel" and gov2==gov:
-                                    dtype=u"rel&"+dtype
-                                    break
-                        if (dtype==u"xsubj" or dtype==u"xsubj-cop") and (u"conj" not in deprels): # TODO: jumped xsubj?
-                            flag=u"XS"
-                        elif u"&" in dtype: # TODO: jumped rel
-                            flag=u"REL"
-                        else:
+            # BASELAYER
+            if line[form.HEAD]==u"0": # sentence root
+                continue
+            d=self.tokens[int(line[form.ID])-1]
+            dependency=Dep(self.tokens[int(line[form.HEAD])-1],d,line[form.DEPREL],flag=u"BASE")
+            self.add_dep(dependency)
+        for line in lines:
+            if line[form.DEPS]!=u"_":
+                d=self.tokens[int(line[form.ID])-1]
+                for dep in line[form.DEPS].split(u"|"):
+                    g,t=dep.split(u":",1)
+                    g=self.tokens[int(g)-1]
+                    flag=None
+                    for conj in self.conjs:
+                        if conj.dep==d or conj.dep==g:
                             flag=u"CC"
-                        dependency=Dep(gov_token,dep,dtype,flag)
+                            break
+                    if not flag and (t==u"nsubj" or t==u"nsubj:cop"):
+                        flag=u"XS"
+                    if not flag:
+                        if t!=u"name":
+                            print >> sys.stderr, "...skipping unrecognized dependency:",t
+                        continue
+                    dependency=Dep(g,d,t,flag=flag)
                     self.add_dep(dependency)
             
 
@@ -101,11 +93,9 @@ class Tree(object):
             self.basedeps[dependency.dep]=dependency
         self.childs[dependency.gov].append(dependency)
         self.govs[dependency.dep].append(dependency)
-        if dependency.dtype==u"rel":
-            self.rels.append(dependency)
-        elif dependency.dtype==u"conj":
+        if dependency.dtype==u"conj":
             self.conjs.append(dependency)
-        elif dependency.dtype==u"nsubj" or dependency.dtype==u"nsubj-cop":
+        elif dependency.dtype==u"nsubj" or dependency.dtype==u"nsubj:cop":
             self.subjs[dependency.gov].append(dependency)
 
     def has_dep(self,g,d):
@@ -148,31 +138,31 @@ class Tree(object):
 
         
     def to_conllu(self):
-        #["ID","FORM","LEMMA","POS","FEAT","HEAD","DEPREL"]
-        ID,FORM,LEMMA,CPOS,POS,FEAT,HEAD,DEPREL,DEPS,MISC=range(10)
+        form=formats[u"conllu"]
         sent=[]
         for token in self.tokens:
             line=[]
             for _ in xrange(10):
                 line.append(u"_")
-            line[ID]=str(token.index+1)
-            line[FORM]=token.text
-            line[LEMMA]=token.lemma
-            line[CPOS]=token.pos
-            line[POS]=token.pos # TODO: full conllu support
-            line[FEAT]=token.feat # TODO: full conllu support
+            line[form.ID]=str(token.index+1)
+            line[form.FORM]=token.text
+            line[form.LEMMA]=token.lemma
+            line[form.CPOS]=token.cpos
+            line[form.POS]=token.pos
+            line[form.FEAT]=token.feat
             baselayer=self.basedeps.get(token,None)
             if baselayer is None:
-                line[HEAD]=u"0"
-                line[DEPREL]=u"ROOT"
+                line[form.HEAD]=u"0"
+                line[form.DEPREL]=u"ROOT"
             else:
-                line[HEAD]=str(baselayer.gov.index+1)
-                line[DEPREL]=baselayer.dtype
+                line[form.HEAD]=str(baselayer.gov.index+1)
+                line[form.DEPREL]=baselayer.dtype
             extradeps=[]
             for d in self.govs.get(token,[]):
                 if d!=baselayer:
                     extradeps.append((d.gov.index+1,d.dtype.split(u"&",1)[-1]))   
-            line[DEPS]=u"|".join(str(d[0])+u":"+d[1] for d in sorted(extradeps)) if extradeps else u"_"
+            line[form.DEPS]=u"|".join(str(d[0])+u":"+d[1] for d in sorted(extradeps)) if extradeps else u"_"
+            # TODO misc
             sent.append(line)
         for line in sent:
             print >> sys.stdout, (u"\t".join(c for c in line)).encode(u"utf-8")
@@ -181,9 +171,10 @@ class Tree(object):
 
 class Token(object):
 
-    def __init__(self,idx,text,pos="",feat="",lemma=""):
+    def __init__(self,idx,text,cpos=u"_",pos="_",feat="_",lemma="_"):
         self.index=idx
         self.text=text
+        self.cpos=cpos
         self.pos=pos
         self.feat=feat
         self.lemma=lemma
@@ -218,6 +209,9 @@ class Dep(object):
 
     def __repr__(self):
         return (self.gov.text+u"--"+self.dep.text+u"--"+self.dtype+u"--"+self.flag).encode(u"utf-8")
+
+    def __hash__(self):
+        return hash(self.gov.text+u"--"+self.dep.text+u"--"+self.dtype+u"--"+self.flag)
 
 
     

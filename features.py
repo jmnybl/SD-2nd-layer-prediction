@@ -149,25 +149,27 @@ def createAllPairs(features):
 
   
 #create lemma and morpho features for given token
-cats=set([u"CASE",u"NUM",u"SUBCAT",u"PRS",u"VOICE",u"INF"])
+#cats=set([u"CASE",u"NUM",u"SUBCAT",u"PRS",u"VOICE",u"INF"])
 def give_morpho(token,f_list,prefix):
     """
     token: Token()
     """
 
     f_list.add(prefix+u"Lemma-"+token.lemma)
-    f_list.add(prefix+u"POS-"+token.pos)
-    tags=token.feat.split(u"|")
-    cat=None
-    for tag in tags:
-        if tag==u"_":continue
-        if u"+" in tag: continue #just skip
-        if u"_" in tag:
-            cols=tag.split(u"_",1)
-            cat,tag=cols[0],cols[1]
-        if (cat is not None) and (cat in cats):
-            f_list.add(prefix+u"Feat-"+tag)
-            cat=None
+    f_list.add(prefix+u"CPOS-"+token.cpos)
+    if token.feat!=u"_":
+        for tag in token.feat.split(u"|"):
+            f_list.add(prefix+tag)
+#    cat=None
+#    for tag in tags:
+#        if tag==u"_":continue
+#        if u"+" in tag: continue #just skip
+#        if u"_" in tag:
+#            cols=tag.split(u"_",1)
+#            cat,tag=cols[0],cols[1]
+#        if (cat is not None) and (cat in cats):
+#            f_list.add(prefix+u"Feat-"+tag)
+#            cat=None
 
 
 #Takes a sourcefile(features_textfile) and converts that to numbers

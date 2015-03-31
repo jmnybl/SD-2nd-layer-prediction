@@ -20,8 +20,8 @@ def predict(args):
         sys.exit(1)
 
     print >> sys.stderr, "loading models"
-    relmodel=second_layer.Model(args.model[0],u"rel")    
-    rel=second_layer.Relativizers(relmodel)
+#    relmodel=second_layer.Model(args.model[0],u"rel")    
+#    rel=second_layer.Relativizers(relmodel)
     ccmodel=second_layer.Model(args.model[0],u"ccprop")
     ccprop=second_layer.ConjPropagation(ccmodel)
     xs=second_layer.Xsubjects()
@@ -30,7 +30,7 @@ def predict(args):
     count=0
     for comments,sent in read_conll(args.input):
         t=tree.Tree(sent)
-        rel.predict(t)
+#        rel.predict(t)
         xs.predict(t)
         ccprop.predict(t)
         xs.predict(t)
@@ -41,7 +41,7 @@ def predict(args):
         else:
             t.to_conllu()
         count+=1
-        if count%100==0:
+        if count%500==0:
             print >> sys.stderr, count
         
     print >> sys.stderr, "sentences:",count

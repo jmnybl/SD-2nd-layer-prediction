@@ -94,7 +94,7 @@ def is_dep(g,d,tree):
     """ Check if there is dependency between g and d, and return list of types if found. """
     types=[]
     for dep in tree.deps:
-        if g==dep.gov and d==dep.dep:
+        if g==dep.gov and d==dep.dep and dep.dtype!=u"name": # TODO: name?
             types.append(dep.dtype)
     return types
 
@@ -115,7 +115,7 @@ class ConjPropagation(object):
         """ Check whether dep can jump. """
         if dep.dtype in self.resttypes: return False
         for conj in tree.conjs:
-            if dep.dep==conj.gov or dep.gov==conj.gov:
+            if dep.dep==conj.gov or dep.gov==conj.gov: # is connected to 'conj'
                 return True
         return False
 
@@ -131,8 +131,8 @@ class ConjPropagation(object):
         return candidates
 
 
-    # Recursive search for all possible rec jumps
     def gather_all_jumps(self,g,d,tree):
+        """ Recursive search for all possible jumps. (g,d) is one candidate for propagation, return a set of all possible new dependencies this candidate can produce. """
         recs=self.possible_jumps(g,d,tree)
         if len(recs)>0:
             new_set=set()
@@ -145,20 +145,15 @@ class ConjPropagation(object):
 
 
     def learn(self,tree,outfile):
-        for dep in tree.deps:
-            if dep.flag!=u"CC" and self.can_jump(dep,tree):
-                if dep.dtype==u"rel":
-                    continue
+        #candidates=[dep for key,dep in tree.basedeps.iteritems()]
+        candidates=[dep for dep in tree.deps if dep.flag!=u"CC"] # do not propagate propagated, always use the original
+        for dep in candidates:
+            if self.can_jump(dep,tree):
                 new_deps=self.gather_all_jumps(dep.gov,dep.dep,tree)
                 for g,d in new_deps:
                     types=is_dep(g,d,tree)                    
                     if not types:
                         klass=u"no"
-                    elif len(types)==2 and u"rel" in types:
-                        for t in types:
-                            if t!=u"rel":
-                                klass=t
-                                break
                     else:
                         assert len(types)<2
                         klass=types[0]
@@ -172,20 +167,16 @@ class ConjPropagation(object):
             print >> sys.stderr, u"no model found"
             sys.exit(1)
         new=[]
-        for dep in tree.deps:
+        # candidates=get_candidates(tree)
+        candidates=[dep for dep in tree.deps if dep.flag!=u"CC"]
+        for dep in candidates: #tree.deps
             if self.can_jump(dep,tree):
-                if dep.dtype==u"rel":
-                    continue # this is just the rel, we want the secondary function
                 new_deps=self.gather_all_jumps(dep.gov,dep.dep,tree)
                 for g,d in new_deps:
                     features=self.features.create(dep,g,d,tree) #...should return (name,value) tuples
                     klass=self.model.predict_one(features)
                     klass_str=self.model.number2klass[klass]
                     if klass_str==u"no": continue
-                    if u"&" in klass_str: # this is merged rel
-                        #print >> sys.stderr, klass_str
-                        dependency=Dep(g,d,u"rel",flag=u"CC") # add also rel
-                        new.append(dependency)
                     dependency=Dep(g,d,klass_str,flag=u"CC")
                     new.append(dependency)
         for dep in new:
@@ -193,60 +184,63 @@ class ConjPropagation(object):
 
 
 
-class Relativizers(object):
+#class Relativizers(object):
 
-    def __init__(self,model=None):
-        self.features=RelFeatures()
-        self.model=model
+#    def __init__(self,model=None):
+#        self.features=RelFeatures()
+#        self.model=model
 
-    def learn(self,tree,outfile):
-        for rel in tree.rels:
-            features=self.features.create(rel.gov,rel.dep,tree)
-            types=is_dep(rel.gov,rel.dep,tree)
-            if len(types)<2: continue # post-processed dependency, do not use in training
-            for dtype in types:
-                if dtype==u"rel": continue
-                klass=dtype.split(u"&",1)[1]
-                writeData(outfile,klass,features)
-                break
+#    def learn(self,tree,outfile):
+#        for rel in tree.rels:
+#            features=self.features.create(rel.gov,rel.dep,tree)
+#            types=is_dep(rel.gov,rel.dep,tree)
+#            if len(types)<2: continue # post-processed dependency, do not use in training
+#            for dtype in types:
+#                if dtype==u"rel": continue
+#                klass=dtype.split(u"&",1)[1]
+#                writeData(outfile,klass,features)
+#                break
 
 
-    def post_process_rel(self,g,d,t,tree):
-        # move dependency if iccomp and it does not have this dtype already
-        for dep in tree.deps:
-            if dep.gov==g and dep.dtype==u"iccomp":
-                deps=set()
-                for dep2 in tree.childs[dep.dep]: # dependents of iccomp
-                    deps.add(dep2.dtype) # collect all dependents of iccomp
-                if t not in deps:
-                    g=dep.dep
-                    break
-        return g,d,t
+#    def post_process_rel(self,g,d,t,tree):
+#        # move dependency if iccomp and it does not have this dtype already
+#        for dep in tree.deps:
+#            if dep.gov==g and dep.dtype==u"iccomp":
+#                deps=set()
+#                for dep2 in tree.childs[dep.dep]: # dependents of iccomp
+#                    deps.add(dep2.dtype) # collect all dependents of iccomp
+#                if t not in deps:
+#                    g=dep.dep
+#                    break
+#        return g,d,t
 
-    def predict(self,tree):
-        if self.model is None:
-            print >> sys.stderr, u"no model found"
-            sys.exit(1)
-        for rel in tree.rels:
-            features=self.features.create(rel.gov,rel.dep,tree)
-            klass=self.model.predict_one(features)
-            klass_str=u"rel&"+self.model.number2klass[klass]
-            g,d,t=self.post_process_rel(rel.gov,rel.dep,klass_str,tree)
-            dependency=Dep(g,d,t,flag=u"REL")
-            #print dependency
-            tree.add_dep(dependency)
+#    def predict(self,tree):
+#        if self.model is None:
+#            print >> sys.stderr, u"no model found"
+#            sys.exit(1)
+#        for rel in tree.rels:
+#            features=self.features.create(rel.gov,rel.dep,tree)
+#            klass=self.model.predict_one(features)
+#            klass_str=u"rel&"+self.model.number2klass[klass]
+#            g,d,t=self.post_process_rel(rel.gov,rel.dep,klass_str,tree)
+#            dependency=Dep(g,d,t,flag=u"REL")
+#            #print dependency
+#            tree.add_dep(dependency)
 
 
 class Xsubjects(object):
 
     def decide_type(self,token,tree):
         """ token: gov of new dependency (and dep of xcomp also) """
+        # if this is not verb nor copula --> no xsubj
         for dep in tree.childs[token]:
             if dep.dtype==u"cop":
-                return u"xsubj-cop"
-        if token.pos==u"Adv" or token.pos==u"N" or token.pos==u"A":
-            return u"xsubj-cop"
-        return u"xsubj"
+                return u"nsubj:cop"
+        if token.cpos!=u"VERB" and token.cpos!=u"AUX":
+            return None
+        if u"VerbForm=Part" in token.feat and (u"Case=Ess" in token.feat or u"Case=Tra" in token.feat): # ...puut ovat uhattuina, alue tulee kartoitetuksi (acomp like structures)
+            return None
+        return u"nsubj"
 
 
     def predict(self,tree):
@@ -255,17 +249,21 @@ class Xsubjects(object):
             if dep.dtype==u"xcomp" and dep.gov in tree.subjs:
                 for subj in tree.subjs[dep.gov]:
                     types=is_dep(dep.dep,subj.dep,tree)
-                    if (u"xsubj" in types) or u"xsubj-cop" in types: continue # this is because we run xsubj part twice!
+                    if (u"nsubj" in types) or (u"nsubj:cop" in types): continue # this is because we run xsubj part twice!
                     for dep2 in tree.childs[dep.dep]: # xcomp chain
                         if dep2.dtype==u"xcomp":
                             types=is_dep(dep2.gov,subj.dep,tree)
-                            if (u"xsubj" in types or u"xsubj-cop" in types): continue
+                            if (u"nsubj" in types) or (u"nsubj:cop" in types): continue
                             dtype=self.decide_type(dep2.dep,tree)
+                            if not dtype:
+                                continue
                             dependency=Dep(dep2.dep,subj.dep,dtype,flag=u"XS")
                             #print dependency
                             new.append(dependency)
                     ## normal xsubj
                     dtype=self.decide_type(dep.dep,tree)
+                    if not dtype:
+                        continue
                     dependency=Dep(dep.dep,subj.dep,dtype,flag=u"XS")
                     #print dependency
                     new.append(dependency)

@@ -1,6 +1,7 @@
 import codecs
 import argparse
 
+DEPS=8
 
 def evaluate(args):
     gsf=codecs.open(args.gs,u"rt",u"utf-8")
@@ -8,23 +9,24 @@ def evaluate(args):
 
     tp=0
     fp=0
-    fn=0
+    fn=0 
 
     for gsl,newl in zip(gsf,newf):
         gsl=gsl.strip()
         newl=newl.strip()
-        if not gsl: continue
-        # 10: deprel, 8: head
+        if not gsl or gsl.startswith(u"#"): continue
+        
         gs=[]
-        for g,d in zip(gsl.split(u"\t")[8].split(u","),gsl.split(u"\t")[10].split(u",")):
-            gs.append((g,d))
+        for dep in gsl.split(u"\t")[DEPS].split(u"|"):
+            if (dep!=u"_") and (u"name" not in gsl): # TODO: what to do with propagated names?
+                gs.append(dep)
         sys=[]
-        for g,d in zip(newl.split(u"\t")[8].split(u","),newl.split(u"\t")[10].split(u",")):
-            sys.append((g,d))
-        if len(gs)==1 and len(sys)==1: # no second layer dependencies
+        for dep in newl.split(u"\t")[DEPS].split(u"|"):
+            if (dep!=u"_") and (u"name" not in newl):
+                sys.append(dep)
+        if len(gs)==0 and len(sys)==0: # no second layer dependencies
             continue
-        del gs[0] # remove the first layer deps
-        del sys[0]
+
         for dep in gs:
             if dep in sys:
                 tp+=1
