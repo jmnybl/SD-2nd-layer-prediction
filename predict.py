@@ -29,7 +29,7 @@ def predict(args):
     print >> sys.stderr, "predicting"
     count=0
     for comments,sent in read_conll(args.input):
-        t=tree.Tree(sent)
+        t=tree.Tree(sent,count+1)
 #        rel.predict(t)
         xs.predict(t)
         ccprop.predict(t)

@@ -39,7 +39,7 @@ def read_conll(inp):
 
 class Tree(object):
 
-    def __init__(self,sent):
+    def __init__(self,sent,sent_id): # sent_id is for printing warnings
         self.tokens=[] #[Token(),...]
         self.childs=defaultdict(lambda:[]) #{token():[dep(),...])#
         self.govs=defaultdict(lambda:[]) #{token():[dep(),...])#
@@ -47,10 +47,10 @@ class Tree(object):
         self.deps=[]
         self.conjs=[] # [Dep(),...]
         self.subjs=defaultdict(lambda:[]) #{govtoken():[dep(),...])#
-        self.from_conllu(sent)
+        self.from_conllu(sent,sent_id)
 
     #Called from new_from_conll() classmethod
-    def from_conllu(self,lines):    
+    def from_conllu(self,lines,sent_id):    
         """ Reads conllu format and transforms it to a tree instance. """
         form=formats[u"conllu"] #named tuple with the column indices
         for i in xrange(0,len(lines)): # create tokens
@@ -81,7 +81,7 @@ class Tree(object):
                         flag=u"XS"
                     if not flag:
                         if t!=u"name":
-                            print >> sys.stderr, "...skipping unrecognized dependency:",t
+                            print >> sys.stderr, "warning! skipping unrecognized dependency:",sent_id,line[form.ID],line[form.HEAD],line[form.DEPREL],line[form.DEPS]
                         continue
                     dependency=Dep(g,d,t,flag=flag)
                     self.add_dep(dependency)

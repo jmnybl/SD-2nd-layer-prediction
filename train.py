@@ -24,7 +24,7 @@ def train(args):
     count=0
     print >> sys.stderr, "collecting training data"
     for comments,sent in read_conll(args.input):
-        t=tree.Tree(sent)
+        t=tree.Tree(sent,count+1)
         ccprop.learn(t,cc_trainf)
         count+=1
     print >> sys.stderr, "sentences:",count

@@ -26,10 +26,11 @@ def evaluate(args):
     jump_stats=[0,0,0] # tp,fp,fn
     xsubj_stats=[0,0,0]
 
+    counter=0
     for (comm_s,sent_s),(comm_g,sent_g) in zip(read_conll(args.sys),read_conll(args.gs)):
 
-        tree_s=Tree(sent_s)
-        tree_g=Tree(sent_g)
+        tree_s=Tree(sent_s,counter+1)
+        tree_g=Tree(sent_g,counter+1)
 
         jump_s=set([d for d in tree_s.deps if d.flag==u"CC"])
         xsubj_s=set([d for d in tree_s.deps if d.flag==u"XS"])
@@ -44,6 +45,12 @@ def evaluate(args):
         xsubj_stats[0]+=len(xsubj_s&xsubj_g)
         xsubj_stats[1]+=len(xsubj_s-xsubj_g)
         xsubj_stats[2]+=len(xsubj_g-xsubj_s)
+
+#        if len(xsubj_s-xsubj_g)>0:
+#            print "xsubject false positive:",counter+1
+#            print (u" ".join(t[1] for t in sent_s)).encode(u"utf-8")
+
+        counter+=1
 
     print_numbers("Conjunct propagation:",jump_stats)
     print_numbers("External subjects:",xsubj_stats)
