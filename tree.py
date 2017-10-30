@@ -47,51 +47,69 @@ class Tree(object):
         self.deps=[]
         self.conjs=[] # [Dep(),...]
         self.subjs=defaultdict(lambda:[]) #{govtoken():[dep(),...])#
+        self.token_dict=None
         self.from_conllu(sent,sent_id)
+
+    def __repr__(self):
+        return (" ".join(t.text for t in self.tokens)).encode(u"utf-8")
 
     #Called from new_from_conll() classmethod
     def from_conllu(self,lines,sent_id):    
         """ Reads conllu format and transforms it to a tree instance. """
         form=formats[u"conllu"] #named tuple with the column indices
-        for i in xrange(0,len(lines)): # create tokens
-            line=lines[i]
-            token=Token(i,line[form.FORM],cpos=line[form.CPOS],pos=line[form.POS],feat=line[form.FEAT],lemma=line[form.LEMMA],misc=line[form.MISC])
+
+        # create all tokens, token id is string based id from conllu!
+        for line in lines:
+            token=Token(line[form.ID],line[form.FORM],cpos=line[form.CPOS],pos=line[form.POS],feat=line[form.FEAT],lemma=line[form.LEMMA],misc=line[form.MISC])
             self.tokens.append(token)
 
-        # fill syntax
+        # fill in base layer syntax
         for line in lines:
-            # BASELAYER
+
+            dep_token=self.get_token(line[form.ID])
+
             if line[form.HEAD]==u"0": # sentence root
+                dep_token.root=True
                 continue
-            if "." in line[form.ID] or "-" in line[form.ID]:
+
+            if line[form.HEAD]==u"_": # null or multiword expression, skip
                 continue
-            d=self.tokens[int(line[form.ID])-1]
-            dependency=Dep(self.tokens[int(line[form.HEAD])-1],d,line[form.DEPREL],flag=u"BASE")
-            self.add_dep(dependency)
-        for line in lines:
+            
+            base_dependency=Dep(self.get_token(line[form.HEAD]),dep_token,line[form.DEPREL],flag=u"BASE")
+            self.add_dep(base_dependency)
+
+        # fill in other dependencies
+        for line in lines: # search for other incoming dependencies
             if line[form.DEPS]!=u"_":
-                if "." in line[form.ID] or "-" in line[form.ID]:
-                    continue
-                d=self.tokens[int(line[form.ID])-1]
-                for dep in line[form.DEPS].split(u"|"):
+                dep_token=self.get_token(line[form.ID])
+                for dep in line[form.DEPS].split(u"|"): # all additional dependencies
                     g,t=dep.split(u":",1)
-                    if "." in g:
-                        continue
-                    g=self.tokens[int(g)-1]
+                    gov_token=self.get_token(g)
                     flag=None
-                    for conj in self.conjs:
-                        if conj.dep==d or conj.dep==g:
-                            flag=u"CC"
-                            break
+                    if t==u"flat:name":
+                        flag=u"NAME"
+                    if "." in g or "." in line[form.ID]:
+                        flag="NULLDEP"
+                    if not flag:
+                        for conj in self.conjs:
+                            if conj.dep==dep_token or conj.dep==gov_token:
+                                flag=u"CC"
+                                break
                     if not flag and (t==u"nsubj" or t==u"nsubj:cop"):
                         flag=u"XS"
                     if not flag:
-                        if t!=u"flat:name":
-                            print >> sys.stderr, "warning! skipping unrecognized dependency:",sent_id,line[form.ID],line[form.HEAD],line[form.DEPREL],line[form.DEPS]
-                        continue
-                    dependency=Dep(g,d,t,flag=flag)
+                        flag=u"UNREC"
+                        print >> sys.stderr, "warning! unrecognized dependency:",sent_id,line[form.ID],line[form.HEAD],line[form.DEPREL],line[form.DEPS]
+                        #continue
+                    dependency=Dep(gov_token,dep_token,t,flag=flag)
                     self.add_dep(dependency)
-            
+
+    def get_token(self,tid):
+        if not self.token_dict:
+            self.token_dict={}
+            for i,token in enumerate(self.tokens):
+                self.token_dict[token.index]=i
+        return self.tokens[self.token_dict[tid]]            
 
     def add_dep(self,dependency):
         self.deps.append(dependency)
@@ -110,14 +128,10 @@ class Tree(object):
                 return dependency.dtype
         return None
 
-    def get_flag(self,g,d,t):
-        for dependency in self.deps:
-            if dependency.gov.index==g.index and dependency.dep.index==d.index and dependency.type==t:
-                return dependency.flag
-        return None
-
 
     def tree_to_conll(self,conll_format=u"conll09"):
+        print >> sys.stderr, "CONLL09 NOT SUPPORTED!!!"
+        sys.exit()
         #["ID","FORM","LEMMA","POS","FEAT","HEAD","DEPREL"]
         form=formats[conll_format]
         sent=[]
@@ -156,7 +170,7 @@ class Tree(object):
             line=[]
             for _ in xrange(10):
                 line.append(u"_")
-            line[form.ID]=str(token.index+1)
+            line[form.ID]=token.index
             line[form.FORM]=token.text
             line[form.LEMMA]=token.lemma
             line[form.CPOS]=token.cpos
@@ -164,19 +178,25 @@ class Tree(object):
             line[form.FEAT]=token.feat
             baselayer=self.basedeps.get(token,None)
             if baselayer is None:
-                line[form.HEAD]=u"0"
-                line[form.DEPREL]=u"root"
+                if token.root==True:
+                    line[form.HEAD]=u"0"
+                    line[form.DEPREL]=u"root"
+                else:
+                    line[form.HEAD]=u"_"
+                    line[form.DEPREL]=u"_"
             else:
-                line[form.HEAD]=str(baselayer.gov.index+1)
+                line[form.HEAD]=baselayer.gov.index
                 line[form.DEPREL]=baselayer.dtype
             extradeps=[]
             for d in self.govs.get(token,[]): # d is dep object
                 if d!=baselayer:
                     if no_l2==True and (d.flag=="CC" or d.flag=="XS"):
                         continue
-                    extradeps.append((d.gov.index+1,d.dtype.split(u"&",1)[-1]))   
-            line[form.DEPS]=u"|".join(str(d[0])+u":"+d[1] for d in sorted(extradeps)) if extradeps else u"_"
-            # TODO misc
+                    extradeps.append((d.gov.index,d.dtype.split(u"&",1)[-1]))
+            if not extradeps:
+                 line[form.DEPS]=u"_"
+            else:
+                line[form.DEPS]=u"|".join(d[0]+u":"+d[1] for d in sorted(extradeps, key=lambda x: (float(x[0]),x[1].lower())))
             line[form.MISC]=token.misc
             sent.append(line)
         for line in sent:
@@ -194,6 +214,7 @@ class Token(object):
         self.feat=feat
         self.lemma=lemma
         self.misc=misc
+        self.root=False
 
     def __str__(self):
         return self.text.encode(u"utf-8")

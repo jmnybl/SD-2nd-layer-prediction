@@ -44,8 +44,8 @@ class JumpFeatures:
                 break
 
         # is candidate going to same direction as original
-        orig=dependency.gov.index-dependency.dep.index
-        candidate=g.index-d.index
+        orig=int(dependency.gov.index.split(".",1)[0])-int(dependency.dep.index.split(".",1)[0])
+        candidate=int(g.index.split(".",1)[0])-int(d.index.split(".",1)[0])
         if orig > 0 and candidate > 0: features[u"dep:bothGoingToLeft"]=1
         elif orig < 0 and candidate < 0: features[u"dep:bothGoingToRight"]=1
         else: features[u"dep:differentDirection"]=1

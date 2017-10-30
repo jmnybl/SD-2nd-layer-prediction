@@ -110,7 +110,7 @@ class ConjPropagation(object):
         self.features=JumpFeatures()
         self.model=model
         self.vectorizer=vectorizer
-        self.resttypes=set([u"cc",u"conj",u"punct",u"ellipsis"])
+        self.resttypes=set([u"cc",u"conj",u"punct",u"ellipsis","orphan"])
 
     def can_jump(self,dep,tree):
         """ Check whether dep can jump. """
@@ -154,11 +154,14 @@ class ConjPropagation(object):
             if self.can_jump(dep,tree):
                 new_deps=self.gather_all_jumps(dep.gov,dep.dep,tree)
                 for g,d in new_deps:
-                    types=is_dep(g,d,tree)                    
+                    types=is_dep(g,d,tree)
+                                       
                     if not types:
                         klass=u"no"
                     else:
-                        assert len(types)<2
+                        if len(types)>1 or types[0] in self.resttypes:
+                            print >> sys.stderr, "more than one possible relation type or restricted relation type, skipping", types, tree
+                            continue
                         klass=types[0]
                     features=self.features.create(dep,g,d,tree)
                     examples.append(features)
