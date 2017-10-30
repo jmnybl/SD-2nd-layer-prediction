@@ -63,13 +63,14 @@ class JumpFeatures:
         for dep in tree.childs[dependency.gov]:
             if dep.flag!=u"CC" and dep.dep!=dependency.dep:
                 features[u"dep:OrigGovernorsDep-"+dep.dtype]=1
-                if dep.dtype==u"cc":
-                    features[u"dep:CCtoken-"+dep.dep.lemma]=1
+                #if dep.dtype==u"cc":
+                #    features[u"dep:CCtoken-"+dep.dep.lemma]=1
             if dep.dtype==u"conj":
                 conjs+=1
         for dep in tree.childs[dependency.dep]:
             if dep.dtype==u"cc":
-                features[u"dep:CCtoken-"+dep.dep.lemma]=1
+                pass
+                #features[u"dep:CCtoken-"+dep.dep.lemma]=1
             elif dep.dtype==u"conj":
                 conjs+=1
         
@@ -129,7 +130,7 @@ class RelFeatures:
             features.add(u"dep:DependentsDependency-"+dep.dtype)
             
         features=createAllPairs(features)
-        
+
         return features
     
 
@@ -154,11 +155,11 @@ def give_morpho(token,f_list,prefix):
     token: Token()
     """
 
-    f_list[prefix+u"Lemma-"+token.lemma]=1
+    #f_list[prefix+u"Lemma-"+token.lemma]=1
     f_list[prefix+u"CPOS-"+token.cpos]=1
-    if token.feat!=u"_":
-        for tag in token.feat.split(u"|"):
-            f_list[prefix+tag]=1
+    #if token.feat!=u"_":
+    #    for tag in token.feat.split(u"|"):
+    #        f_list[prefix+tag]=1
 #    cat=None
 #    for tag in tags:
 #        if tag==u"_":continue
