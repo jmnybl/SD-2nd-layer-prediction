@@ -55,7 +55,7 @@ class Tree(object):
         form=formats[u"conllu"] #named tuple with the column indices
         for i in xrange(0,len(lines)): # create tokens
             line=lines[i]
-            token=Token(i,line[form.FORM],cpos=line[form.CPOS],pos=line[form.POS],feat=line[form.FEAT],lemma=line[form.LEMMA])
+            token=Token(i,line[form.FORM],cpos=line[form.CPOS],pos=line[form.POS],feat=line[form.FEAT],lemma=line[form.LEMMA],misc=line[form.MISC])
             self.tokens.append(token)
 
         # fill syntax
@@ -63,14 +63,20 @@ class Tree(object):
             # BASELAYER
             if line[form.HEAD]==u"0": # sentence root
                 continue
+            if "." in line[form.ID] or "-" in line[form.ID]:
+                continue
             d=self.tokens[int(line[form.ID])-1]
             dependency=Dep(self.tokens[int(line[form.HEAD])-1],d,line[form.DEPREL],flag=u"BASE")
             self.add_dep(dependency)
         for line in lines:
             if line[form.DEPS]!=u"_":
+                if "." in line[form.ID] or "-" in line[form.ID]:
+                    continue
                 d=self.tokens[int(line[form.ID])-1]
                 for dep in line[form.DEPS].split(u"|"):
                     g,t=dep.split(u":",1)
+                    if "." in g:
+                        continue
                     g=self.tokens[int(g)-1]
                     flag=None
                     for conj in self.conjs:
@@ -80,7 +86,7 @@ class Tree(object):
                     if not flag and (t==u"nsubj" or t==u"nsubj:cop"):
                         flag=u"XS"
                     if not flag:
-                        if t!=u"name":
+                        if t!=u"flat:name":
                             print >> sys.stderr, "warning! skipping unrecognized dependency:",sent_id,line[form.ID],line[form.HEAD],line[form.DEPREL],line[form.DEPS]
                         continue
                     dependency=Dep(g,d,t,flag=flag)
@@ -102,6 +108,12 @@ class Tree(object):
         for dependency in self.deps:
             if dependency.gov.index==g.index and dependency.dep.index==d.index:
                 return dependency.dtype
+        return None
+
+    def get_flag(self,g,d,t):
+        for dependency in self.deps:
+            if dependency.gov.index==g.index and dependency.dep.index==d.index and dependency.type==t:
+                return dependency.flag
         return None
 
 
@@ -137,7 +149,7 @@ class Tree(object):
         print >> sys.stdout    
 
         
-    def to_conllu(self):
+    def to_conllu(self,no_l2=False):
         form=formats[u"conllu"]
         sent=[]
         for token in self.tokens:
@@ -158,11 +170,14 @@ class Tree(object):
                 line[form.HEAD]=str(baselayer.gov.index+1)
                 line[form.DEPREL]=baselayer.dtype
             extradeps=[]
-            for d in self.govs.get(token,[]):
+            for d in self.govs.get(token,[]): # d is dep object
                 if d!=baselayer:
+                    if no_l2==True and (d.flag=="CC" or d.flag=="XS"):
+                        continue
                     extradeps.append((d.gov.index+1,d.dtype.split(u"&",1)[-1]))   
             line[form.DEPS]=u"|".join(str(d[0])+u":"+d[1] for d in sorted(extradeps)) if extradeps else u"_"
             # TODO misc
+            line[form.MISC]=token.misc
             sent.append(line)
         for line in sent:
             print >> sys.stdout, (u"\t".join(c for c in line)).encode(u"utf-8")
@@ -171,13 +186,14 @@ class Tree(object):
 
 class Token(object):
 
-    def __init__(self,idx,text,cpos=u"_",pos="_",feat="_",lemma="_"):
+    def __init__(self,idx,text,cpos=u"_",pos="_",feat="_",lemma="_",misc="_"):
         self.index=idx
         self.text=text
         self.cpos=cpos
         self.pos=pos
         self.feat=feat
         self.lemma=lemma
+        self.misc=misc
 
     def __str__(self):
         return self.text.encode(u"utf-8")

@@ -23,59 +23,59 @@ class JumpFeatures:
         d: Token(), dep of propagated dependency
         tree: Tree()
         """
-        features=set()
+        features={}
         
         ## DEPENDENCY RELATED (prefix:dep) ##
 
         #dependencyType
         depType=u"dep:dependencyType-"+dependency.dtype
-        features.add(depType)
+        features[depType]=1
 
         #different governor
-        if dependency.gov!=g: features.add(u"dep:hasDifferentGov")
-        else: features.add(u"dep:hasSameGov")
+        if dependency.gov!=g: features[u"dep:hasDifferentGov"]=1
+        else: features[u"dep:hasSameGov"]=1
 
         #if there already is a dependency of same type
         #two cases: 1) kissa ja koira syö --> verb can have two nsubj 2) kissa syö ja koira syö --> verb can't have two nsubj
         #this is only for case 2 
         for dep in tree.childs[g]:
             if dep.gov!=dependency.gov and dep.flag!=u"CC" and dep.dtype==dependency.dtype:
-                features.add(u"dep:isSameType")
+                features[u"dep:isSameType"]=1
                 break
 
         # is candidate going to same direction as original
         orig=dependency.gov.index-dependency.dep.index
         candidate=g.index-d.index
-        if orig > 0 and candidate > 0: features.add(u"dep:bothGoingToLeft")
-        elif orig < 0 and candidate < 0: features.add(u"dep:bothGoingToRight")
-        else: features.add(u"dep:differentDirection")
+        if orig > 0 and candidate > 0: features[u"dep:bothGoingToLeft"]=1
+        elif orig < 0 and candidate < 0: features[u"dep:bothGoingToRight"]=1
+        else: features[u"dep:differentDirection"]=1
             
 
         conjs=0
         #All dependencies Candidate deptok/govtok governs, and Dependency governing Original governor
         for dep in tree.childs[g]:
             if dep.flag!=u"CC": 
-                features.add(u"dep:CandGovernorsDependency-"+dep.dtype)
+                features[u"dep:CandGovernorsDependency-"+dep.dtype]=1
             
         for dep in tree.childs[d]:
             if dep.flag!=u"CC":
-                features.add(u"dep:CandDependentsDependency-"+dep.dtype)
+                features[u"dep:CandDependentsDependency-"+dep.dtype]=1
         for dep in tree.childs[dependency.gov]:
             if dep.flag!=u"CC" and dep.dep!=dependency.dep:
-                features.add(u"dep:OrigGovernorsDep-"+dep.dtype)
+                features[u"dep:OrigGovernorsDep-"+dep.dtype]=1
                 if dep.dtype==u"cc":
-                    features.add(u"dep:CCtoken-"+dep.dep.lemma)
+                    features[u"dep:CCtoken-"+dep.dep.lemma]=1
             if dep.dtype==u"conj":
                 conjs+=1
         for dep in tree.childs[dependency.dep]:
             if dep.dtype==u"cc":
-                features.add(u"dep:CCtoken-"+dep.dep.lemma)
+                features[u"dep:CCtoken-"+dep.dep.lemma]=1
             elif dep.dtype==u"conj":
                 conjs+=1
         
 
         assert conjs>0
-        features.add(u"calc:conjs-"+unicode(conjs))
+        features[u"calc:conjs"]=conjs
         
         
         ## TOKEN RELATED (prefic:tok) ##
@@ -139,13 +139,12 @@ class RelFeatures:
 
 #Takes features and creates all possible pairs (f1f1, f1f2, f1f3, f2f2...)
 def createAllPairs(features):
-    moreFeatures=set()
-    features=sorted(features)
-    for f_index in xrange(len(features)):
-        for i in xrange(f_index,len(features)):
-            new_feature=features[f_index]+features[i]
-            moreFeatures.add(new_feature)
-    return moreFeatures
+    feat_keys=sorted(features.keys())
+    for f_index in xrange(len(feat_keys)):
+        for i in xrange(f_index,len(feat_keys)):
+            new_feature=feat_keys[f_index]+feat_keys[i]
+            features[new_feature]=1
+    return features
 
   
 #create lemma and morpho features for given token
@@ -155,11 +154,11 @@ def give_morpho(token,f_list,prefix):
     token: Token()
     """
 
-    f_list.add(prefix+u"Lemma-"+token.lemma)
-    f_list.add(prefix+u"CPOS-"+token.cpos)
+    f_list[prefix+u"Lemma-"+token.lemma]=1
+    f_list[prefix+u"CPOS-"+token.cpos]=1
     if token.feat!=u"_":
         for tag in token.feat.split(u"|"):
-            f_list.add(prefix+tag)
+            f_list[prefix+tag]=1
 #    cat=None
 #    for tag in tags:
 #        if tag==u"_":continue
@@ -172,39 +171,40 @@ def give_morpho(token,f_list,prefix):
 #            cat=None
 
 
+## ..not needed with sklearn.. ##
 #Takes a sourcefile(features_textfile) and converts that to numbers
 #if loadDict == True, permission to load cPickled dict from disc and use it.
 #if it's False, do not load dictionary but create a new and store it to disc
-def convert_toNumbers(loadDict,task,dir):
-    if loadDict:
-        with open(os.path.join(dir,task,u"fnums.json"),u"r") as f:
-            featureDict=json.load(f)
-        with open(os.path.join(dir,task,u"classes.json"),u"r") as f:
-            classDict=json.load(f)
-    else:
-        featureDict={}
-        classDict={}
-    sourcefile=codecs.open(os.path.join(dir,task,u"train.txt"),"rt","utf-8")
-    targetfile=codecs.open(os.path.join(dir,task,u"train.num"),"wt","utf-8")
-    regex=re.compile(u"\:[0-9]+$")
-    for line in sourcefile:
-        features=[]
-        line=line.strip()
-        columns=line.split()
-        for i in range(1,len(columns)):
-            fNumber=featureDict.setdefault(columns[i], len(featureDict)+1)
-            features.append(fNumber)
-        f_weight=1/(math.sqrt(len(features)))
-        features.sort()
-        features_str=u" ".join(unicode(feature)+u":"+unicode(f_weight) for feature in features)
-        cNumber=classDict.setdefault(columns[0], len(classDict)+1)
-        targetfile.write(unicode(cNumber)+u" "+features_str+"\n")
-    sourcefile.close()
-    targetfile.close()
-    if loadDict==False:
-        with open(os.path.join(dir,task,"fnums.json"),u"w") as f:
-            json.dump(featureDict,f)
-        with open(os.path.join(dir,task,"classes.json"),u"w") as f:
-            json.dump(classDict,f)
+#def convert_toNumbers(loadDict,task,dir):
+#    if loadDict:
+#        with open(os.path.join(dir,task,u"fnums.json"),u"r") as f:
+#            featureDict=json.load(f)
+#        with open(os.path.join(dir,task,u"classes.json"),u"r") as f:
+#            classDict=json.load(f)
+#    else:
+#        featureDict={}
+#        classDict={}
+#    sourcefile=codecs.open(os.path.join(dir,task,u"train.txt"),"rt","utf-8")
+#    targetfile=codecs.open(os.path.join(dir,task,u"train.num"),"wt","utf-8")
+#    regex=re.compile(u"\:[0-9]+$")
+#    for line in sourcefile:
+#        features=[]
+#        line=line.strip()
+#        columns=line.split()
+#        for i in range(1,len(columns)):
+#            fNumber=featureDict.setdefault(columns[i], len(featureDict)+1)
+#            features.append(fNumber)
+#        f_weight=1/(math.sqrt(len(features)))
+#        features.sort()
+#        features_str=u" ".join(unicode(feature)+u":"+unicode(f_weight) for feature in features)
+#        cNumber=classDict.setdefault(columns[0], len(classDict)+1)
+#        targetfile.write(unicode(cNumber)+u" "+features_str+"\n")
+#    sourcefile.close()
+#    targetfile.close()
+#    if loadDict==False:
+#        with open(os.path.join(dir,task,"fnums.json"),u"w") as f:
+#            json.dump(featureDict,f)
+#        with open(os.path.join(dir,task,"classes.json"),u"w") as f:
+#            json.dump(classDict,f)
 
 

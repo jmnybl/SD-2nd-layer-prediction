@@ -14,79 +14,79 @@ from tree import Tree,Dep
 from features import JumpFeatures,RelFeatures
 import numpy as np
 
+## ..not needed with sklearn... ##
+#class Model(object):
 
-class Model(object):
+#    def __init__(self,dir,task):
+#        self.klasses=None ## readModel() fills these...
+#        self.vector=None 
+#        self.base_features=None
+#        self.fDict=None
+#        self.number2klass=None
+#        self.readModel(dir,task)       
 
-    def __init__(self,dir,task):
-        self.klasses=None ## readModel() fills these...
-        self.vector=None 
-        self.base_features=None
-        self.fDict=None
-        self.number2klass=None
-        self.readModel(dir,task)       
+#    def readModel(self,dir,task):
+#        print >> sys.stderr, u"Reading SVM model..."
+#        if os.path.exists(os.path.join(dir,task,"vector.npy")) and os.path.exists(os.path.join(dir,task,"basef.json")):
+#            self.vector=np.load(os.path.join(dir,task,"vector.npy"))
+#            with open(os.path.join(dir,task,u"basef.json"),u"r") as f:
+#                self.base_features=json.load(f)
+#            print >> sys.stderr,u"Model:",os.path.join(dir,task,u"vector.npy")
+#        else:
+#            f=codecs.open(os.path.join(dir,task,u"model.svm"),u"rt",u"utf-8")
+#            self.vector=None
+#            for line in f:
+#                line=line.strip()
+#                if u"number of base features" in line:
+#                    baseFs=int(line.split()[0])
+#                    self.base_features=baseFs
+#                elif u"highest feature index" in line:
+#                    self.vector=np.zeros(int(line.split()[0]))
+#                elif u"qid:0" in line:
+#                    cols=line.split()
+#                    del cols[0:2]
+#                    del cols[-1]
+#                    for col in cols:
+#                        parts=col.split(u":")
+#                        fNum=int(parts[0])
+#                        value=float(parts[1])
+#                        self.vector[fNum]=value
+#            f.close()
+#            np.save(os.path.join(dir,task,"vector.npy"),np.frombuffer(self.vector)) # save vector so we don't have to compile it again
+#            with open(os.path.join(dir,task,u"basef.json"),u"w") as f:
+#                json.dump(self.base_features,f)
+#            print >> sys.stderr,u"Model:",os.path.join(dir,task,u"model.svm")
+#        with open(os.path.join(dir,task,u"fnums.json"),u"r") as f:
+#            self.fDict=json.load(f)
+#        with open(os.path.join(dir,task,u"classes.json"),u"r") as f:
+#            self.klasses=json.load(f)
+#        ## convert from key:ArgName,value:klassNum to key:klassNum,value:ArgName
+#        self.number2klass={}
+#        for key,value in self.klasses.iteritems():
+#            self.number2klass[value]=key
 
-    def readModel(self,dir,task):
-        print >> sys.stderr, u"Reading SVM model..."
-        if os.path.exists(os.path.join(dir,task,"vector.npy")) and os.path.exists(os.path.join(dir,task,"basef.json")):
-            self.vector=np.load(os.path.join(dir,task,"vector.npy"))
-            with open(os.path.join(dir,task,u"basef.json"),u"r") as f:
-                self.base_features=json.load(f)
-            print >> sys.stderr,u"Model:",os.path.join(dir,task,u"vector.npy")
-        else:
-            f=codecs.open(os.path.join(dir,task,u"model.svm"),u"rt",u"utf-8")
-            self.vector=None
-            for line in f:
-                line=line.strip()
-                if u"number of base features" in line:
-                    baseFs=int(line.split()[0])
-                    self.base_features=baseFs
-                elif u"highest feature index" in line:
-                    self.vector=np.zeros(int(line.split()[0]))
-                elif u"qid:0" in line:
-                    cols=line.split()
-                    del cols[0:2]
-                    del cols[-1]
-                    for col in cols:
-                        parts=col.split(u":")
-                        fNum=int(parts[0])
-                        value=float(parts[1])
-                        self.vector[fNum]=value
-            f.close()
-            np.save(os.path.join(dir,task,"vector.npy"),np.frombuffer(self.vector)) # save vector so we don't have to compile it again
-            with open(os.path.join(dir,task,u"basef.json"),u"w") as f:
-                json.dump(self.base_features,f)
-            print >> sys.stderr,u"Model:",os.path.join(dir,task,u"model.svm")
-        with open(os.path.join(dir,task,u"fnums.json"),u"r") as f:
-            self.fDict=json.load(f)
-        with open(os.path.join(dir,task,u"classes.json"),u"r") as f:
-            self.klasses=json.load(f)
-        ## convert from key:ArgName,value:klassNum to key:klassNum,value:ArgName
-        self.number2klass={}
-        for key,value in self.klasses.iteritems():
-            self.number2klass[value]=key
-
-    def predict_one(self,features):
-        """ features are in text format, first convert to numbers """
-        fnums=[]
-        for feature in features:
-            feat=self.fDict.get(feature)
-            if feat is not None:
-                fnums.append(feat)
-        
-        w=1/(math.sqrt(len(fnums)))
-        
-        maxscore=None
-        klassnum=None
-        for i in xrange(1,len(self.klasses)):
-            score=0.0
-            offset=((i-1)*self.base_features)
-            for fnum in fnums: # list of feature numbers
-                dim=offset+fnum # position in model.vector
-                score+=w*self.vector[dim]
-            if (maxscore is None) or maxscore<score:
-                maxscore=score
-                klassnum=i
-        return klassnum
+#    def predict_one(self,features):
+#        """ features are in text format, first convert to numbers """
+#        fnums=[]
+#        for feature in features:
+#            feat=self.fDict.get(feature)
+#            if feat is not None:
+#                fnums.append(feat)
+#        
+#        w=1/(math.sqrt(len(fnums)))
+#        
+#        maxscore=None
+#        klassnum=None
+#        for i in xrange(1,len(self.klasses)):
+#            score=0.0
+#            offset=((i-1)*self.base_features)
+#            for fnum in fnums: # list of feature numbers
+#                dim=offset+fnum # position in model.vector
+#                score+=w*self.vector[dim]
+#            if (maxscore is None) or maxscore<score:
+#                maxscore=score
+#                klassnum=i
+#        return klassnum
 
 
 
@@ -99,16 +99,17 @@ def is_dep(g,d,tree):
     return types
 
 #Writes the textfile, which has to be later converted to numbers and feed to svm.
-def writeData(f,klass,features):
-    feat_str=u" ".join(feat for feat in features)
-    f.write(klass+u" "+feat_str+u"\n")
+#def writeData(f,klass,features):
+#    feat_str=u" ".join(feat for feat in features)
+#    f.write(klass+u" "+feat_str+u"\n")
 
 
 class ConjPropagation(object):
 
-    def __init__(self,model=None):
+    def __init__(self,model=None,vectorizer=None):
         self.features=JumpFeatures()
         self.model=model
+        self.vectorizer=vectorizer
         self.resttypes=set([u"cc",u"conj",u"punct",u"ellipsis"])
 
     def can_jump(self,dep,tree):
@@ -144,8 +145,10 @@ class ConjPropagation(object):
             return recs
 
 
-    def learn(self,tree,outfile):
+    def learn(self,tree):
         #candidates=[dep for key,dep in tree.basedeps.iteritems()]
+        examples=[]
+        labels=[]
         candidates=[dep for dep in tree.deps if dep.flag!=u"CC"] # do not propagate propagated, always use the original
         for dep in candidates:
             if self.can_jump(dep,tree):
@@ -158,7 +161,9 @@ class ConjPropagation(object):
                         assert len(types)<2
                         klass=types[0]
                     features=self.features.create(dep,g,d,tree)
-                    writeData(outfile,klass,features)
+                    examples.append(features)
+                    labels.append(klass)
+        return examples, labels
                     
 
     def predict(self,tree):
@@ -174,10 +179,9 @@ class ConjPropagation(object):
                 new_deps=self.gather_all_jumps(dep.gov,dep.dep,tree)
                 for g,d in new_deps:
                     features=self.features.create(dep,g,d,tree) #...should return (name,value) tuples
-                    klass=self.model.predict_one(features)
-                    klass_str=self.model.number2klass[klass]
-                    if klass_str==u"no": continue
-                    dependency=Dep(g,d,klass_str,flag=u"CC")
+                    klass=self.model.predict(self.vectorizer.transform(features))[0]
+                    if klass==u"no": continue
+                    dependency=Dep(g,d,klass,flag=u"CC")
                     new.append(dependency)
         for dep in new:
             tree.add_dep(dep)
