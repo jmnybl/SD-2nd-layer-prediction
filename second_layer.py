@@ -312,22 +312,21 @@ class Xsubjects(object):
             if (dep.dtype==u"xcomp" or dep.dtype==u"xcomp:ds") and dep.gov in tree.subjs:
                 for subj in tree.subjs[dep.gov]:
                     types=is_dep(dep.dep,subj.dep,tree)
-                    if u"xsubj" in types: continue # this is because we run xsubj part twice!
-                    # TODO predict
+                    if u"nsubj:xsubj" in types: continue # this is because we run xsubj part twice!
                     features=self.features.create(dep.gov,dep.dep,subj.dep,tree,self.allowed_types) # xcomp_g,new_g,new_d,tree
                     label=self.model.predict(self.vectorizer.transform(features))[0]
                     if label==1:
-                        dependency=Dep(dep.dep,subj.dep,"xsubj",flag=u"XS")
+                        dependency=Dep(dep.dep,subj.dep,"nsubj:xsubj",flag=u"XS")
                         new.append(dependency)
 
                         for dep2 in tree.childs[dep.dep]: # xcomp chain
                             if (dep2.dtype==u"xcomp" or dep2.dtype==u"xcomp:ds"):
                                 types=is_dep(dep2.gov,subj.dep,tree)
-                                if u"xsubj" in types: continue
+                                if u"nsubj:xsubj" in types: continue
                                 features=self.features.create(dep2.gov,dep2.dep,subj.dep,tree,self.allowed_types) # xcomp_g,new_g,new_d,tree
                                 label=self.model.predict(self.vectorizer.transform(features))[0]
                                 if label==1:
-                                    dependency=Dep(dep2.dep,subj.dep,"xsubj",flag=u"XS")
+                                    dependency=Dep(dep2.dep,subj.dep,"nsubj:xsubj",flag=u"XS")
                                     new.append(dependency)
                                 
                     
