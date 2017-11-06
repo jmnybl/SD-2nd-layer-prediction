@@ -26,12 +26,16 @@ def predict(args):
 #    ccmodel=second_layer.Model(args.model[0],u"ccprop")
 
     with open(args.model+"/ccprop.vectorizer","rb") as f:
-        vectorizer=pickle.load(f)
+        cc_vectorizer=pickle.load(f)
     with open(args.model+"/ccprop.model","rb") as f:
-        classifier=pickle.load(f)
+        cc_classifier=pickle.load(f)
+    ccprop=second_layer.ConjPropagation(model=cc_classifier,vectorizer=cc_vectorizer)
 
-    ccprop=second_layer.ConjPropagation(model=classifier,vectorizer=vectorizer)
-    xs=second_layer.Xsubjects()
+    with open(args.model+"/xsubj.vectorizer","rb") as f:
+        x_vectorizer=pickle.load(f)
+    with open(args.model+"/xsubj.model","rb") as f:
+        x_classifier=pickle.load(f)
+    xs=second_layer.Xsubjects(model=x_classifier,vectorizer=x_vectorizer)
     
     print >> sys.stderr, "predicting"
     count=0

@@ -11,7 +11,7 @@ import subprocess # needed for pigz
 import gzip
 
 from tree import Tree,Dep
-from features import JumpFeatures,RelFeatures
+from features import JumpFeatures,XsubjFeatures
 import numpy as np
 
 ## ..not needed with sklearn... ##
@@ -111,6 +111,7 @@ class ConjPropagation(object):
         self.model=model
         self.vectorizer=vectorizer
         self.resttypes=set([u"cc",u"conj",u"punct",u"ellipsis","orphan"])
+        self.allowed_types=[u"aux:pass", u"acl:relcl"]
 
     def can_jump(self,dep,tree):
         """ Check whether dep can jump. """
@@ -163,7 +164,9 @@ class ConjPropagation(object):
                             print >> sys.stderr, "more than one possible relation type or restricted relation type, skipping", types, tree
                             continue
                         klass=types[0]
-                    features=self.features.create(dep,g,d,tree)
+                        if ":" in klass and klass not in self.allowed_types:
+                            klass=klass.split(u":",1)[0]
+                    features=self.features.create(dep,g,d,tree,self.allowed_types)
                     examples.append(features)
                     labels.append(klass)
         return examples, labels
@@ -181,7 +184,7 @@ class ConjPropagation(object):
             if self.can_jump(dep,tree):
                 new_deps=self.gather_all_jumps(dep.gov,dep.dep,tree)
                 for g,d in new_deps:
-                    features=self.features.create(dep,g,d,tree) #...should return (name,value) tuples
+                    features=self.features.create(dep,g,d,tree,self.allowed_types)
                     klass=self.model.predict(self.vectorizer.transform(features))[0]
                     if klass==u"no": continue
                     dependency=Dep(g,d,klass,flag=u"CC")
@@ -237,6 +240,12 @@ class ConjPropagation(object):
 
 class Xsubjects(object):
 
+    def __init__(self,model=None,vectorizer=None):
+        self.features=XsubjFeatures()
+        self.model=model
+        self.vectorizer=vectorizer
+        self.allowed_types=[u"aux:pass", u"acl:relcl"] # allowed language specific dep types, all rest are cut to universal
+
     def decide_type(self,token,tree):
         """ token: gov of new dependency (and dep of xcomp also) """
         # if this is not verb nor copula --> no xsubj
@@ -250,30 +259,78 @@ class Xsubjects(object):
         return u"nsubj"
 
 
-    def predict(self,tree):
-        new=[]
+    def learn(self,tree):
+        examples=[]
+        labels=[]
         for dep in tree.deps:
-            if dep.dtype==u"xcomp" and dep.gov in tree.subjs:
+            if (dep.dtype==u"xcomp" or dep.dtype==u"xcomp:ds") and dep.gov in tree.subjs:
                 for subj in tree.subjs[dep.gov]:
                     types=is_dep(dep.dep,subj.dep,tree)
-                    if (u"nsubj" in types) or (u"nsubj:cop" in types): continue # this is because we run xsubj part twice!
+                    if (u"nsubj" in types) or (u"nsubj:cop" in types):
+                        label=1
+                    else:
+                        label=0
+                    # TODO collect features
+                    features=self.features.create(dep.gov,dep.dep,subj.dep,tree,self.allowed_types) # xcomp_g,new_g,new_d,tree
+                    examples.append(features)
+                    labels.append(label)
                     for dep2 in tree.childs[dep.dep]: # xcomp chain
-                        if dep2.dtype==u"xcomp":
+                        if dep2.dtype==u"xcomp" or dep2.dtype==u"xcomp:ds":
                             types=is_dep(dep2.gov,subj.dep,tree)
-                            if (u"nsubj" in types) or (u"nsubj:cop" in types): continue
-                            dtype=self.decide_type(dep2.dep,tree)
-                            if not dtype:
-                                continue
-                            dependency=Dep(dep2.dep,subj.dep,dtype,flag=u"XS")
+                            if (u"nsubj" in types) or (u"nsubj:cop" in types): # positive!
+                                label=1
+                            else:
+                                label=0
+                            # TODO collect features
+                            features=self.features.create(dep2.gov,dep2.dep,subj.dep,tree,self.allowed_types) # xcomp_g,new_g,new_d,tree
+                            examples.append(features)
+                            labels.append(label)
+                            #dtype=self.decide_type(dep2.dep,tree)
+                            #if not dtype:
+                            #    continue
+                            #dependency=Dep(dep2.dep,subj.dep,dtype,flag=u"XS")
                             #print dependency
-                            new.append(dependency)
+                            #new.append(dependency)
                     ## normal xsubj
-                    dtype=self.decide_type(dep.dep,tree)
-                    if not dtype:
-                        continue
-                    dependency=Dep(dep.dep,subj.dep,dtype,flag=u"XS")
+                    #dtype=self.decide_type(dep.dep,tree)
+                    #if not dtype:
+                    #    continue
+                    #dependency=Dep(dep.dep,subj.dep,dtype,flag=u"XS")
                     #print dependency
-                    new.append(dependency)
+                    #new.append(dependency)
+        #for dep in new: # can't add these while iterating the same list, so these need to be added here
+        #    tree.add_dep(dep)
+        return examples, labels
+
+
+    def predict(self,tree):
+        if self.model is None:
+            print >> sys.stderr, u"no model found"
+            sys.exit(1)
+        new=[]
+        for dep in tree.deps:
+            if (dep.dtype==u"xcomp" or dep.dtype==u"xcomp:ds") and dep.gov in tree.subjs:
+                for subj in tree.subjs[dep.gov]:
+                    types=is_dep(dep.dep,subj.dep,tree)
+                    if u"xsubj" in types: continue # this is because we run xsubj part twice!
+                    # TODO predict
+                    features=self.features.create(dep.gov,dep.dep,subj.dep,tree,self.allowed_types) # xcomp_g,new_g,new_d,tree
+                    label=self.model.predict(self.vectorizer.transform(features))[0]
+                    if label==1:
+                        dependency=Dep(dep.dep,subj.dep,"xsubj",flag=u"XS")
+                        new.append(dependency)
+
+                        for dep2 in tree.childs[dep.dep]: # xcomp chain
+                            if (dep2.dtype==u"xcomp" or dep2.dtype==u"xcomp:ds"):
+                                types=is_dep(dep2.gov,subj.dep,tree)
+                                if u"xsubj" in types: continue
+                                features=self.features.create(dep2.gov,dep2.dep,subj.dep,tree,self.allowed_types) # xcomp_g,new_g,new_d,tree
+                                label=self.model.predict(self.vectorizer.transform(features))[0]
+                                if label==1:
+                                    dependency=Dep(dep2.dep,subj.dep,"xsubj",flag=u"XS")
+                                    new.append(dependency)
+                                
+                    
         for dep in new: # can't add these while iterating the same list, so these need to be added here
             tree.add_dep(dep)
 

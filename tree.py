@@ -95,7 +95,7 @@ class Tree(object):
                             if conj.dep==dep_token or conj.dep==gov_token:
                                 flag=u"CC"
                                 break
-                    if not flag and (t==u"nsubj" or t==u"nsubj:cop"):
+                    if not flag and (t==u"nsubj" or t==u"nsubj:cop" or t=="xsubj"):
                         flag=u"XS"
                     if not flag:
                         flag=u"UNREC"
@@ -119,7 +119,7 @@ class Tree(object):
         self.govs[dependency.dep].append(dependency)
         if dependency.dtype==u"conj":
             self.conjs.append(dependency)
-        elif dependency.dtype==u"nsubj" or dependency.dtype==u"nsubj:cop":
+        elif dependency.dtype==u"nsubj" or dependency.dtype==u"nsubj:cop" or dependency.dtype==u"nsubj:pass":
             self.subjs[dependency.gov].append(dependency)
 
     def has_dep(self,g,d):

@@ -16,7 +16,15 @@ class JumpFeatures:
         pass
 
 
-    def create(self,dependency,g,d,tree):
+    def strip_type(self,dtype,allowed_types):
+    
+        if ":" in dtype and dtype not in allowed_types:
+                return dtype.split(":",1)[0]
+        else:
+            return dtype
+
+
+    def create(self,dependency,g,d,tree,allowed_types):
         """
         dependency: Dep(), original dep
         g: Token(), gov of propagated dependency
@@ -28,7 +36,7 @@ class JumpFeatures:
         ## DEPENDENCY RELATED (prefix:dep) ##
 
         #dependencyType
-        depType=u"dep:dependencyType-"+dependency.dtype
+        depType=u"dep:dependencyType-"+self.strip_type(dependency.dtype,allowed_types)
         features[depType]=1
 
         #different governor
@@ -39,7 +47,7 @@ class JumpFeatures:
         #two cases: 1) kissa ja koira syö --> verb can have two nsubj 2) kissa syö ja koira syö --> verb can't have two nsubj
         #this is only for case 2 
         for dep in tree.childs[g]:
-            if dep.gov!=dependency.gov and dep.flag!=u"CC" and dep.dtype==dependency.dtype:
+            if dep.gov!=dependency.gov and dep.flag!=u"CC" and self.strip_type(dep.dtype,allowed_types)==self.strip_type(dependency.dtype,allowed_types):
                 features[u"dep:isSameType"]=1
                 break
 
@@ -55,14 +63,14 @@ class JumpFeatures:
         #All dependencies Candidate deptok/govtok governs, and Dependency governing Original governor
         for dep in tree.childs[g]:
             if dep.flag!=u"CC": 
-                features[u"dep:CandGovernorsDependency-"+dep.dtype]=1
+                features[u"dep:CandGovernorsDependency-"+self.strip_type(dep.dtype,allowed_types)]=1
             
         for dep in tree.childs[d]:
             if dep.flag!=u"CC":
-                features[u"dep:CandDependentsDependency-"+dep.dtype]=1
+                features[u"dep:CandDependentsDependency-"+self.strip_type(dep.dtype,allowed_types)]=1
         for dep in tree.childs[dependency.gov]:
             if dep.flag!=u"CC" and dep.dep!=dependency.dep:
-                features[u"dep:OrigGovernorsDep-"+dep.dtype]=1
+                features[u"dep:OrigGovernorsDep-"+self.strip_type(dep.dtype,allowed_types)]=1
                 #if dep.dtype==u"cc":
                 #    features[u"dep:CCtoken-"+dep.dep.lemma]=1
             if dep.dtype==u"conj":
@@ -100,7 +108,44 @@ class JumpFeatures:
 
         return features
 
+class XsubjFeatures:
 
+    def __init__(self):
+        pass
+
+    def strip_type(self,dtype,allowed_types):
+    
+        if ":" in dtype and dtype not in allowed_types:
+                return dtype.split(":",1)[0]
+        else:
+            return dtype
+    
+    def create(self,xcomp_g,new_g,new_d,tree,allowed_types):
+        """
+        g: Token(), 
+        d: Token()
+        tree: Tree()
+        """
+        features={}
+        
+        give_morpho(xcomp_g,features,u"xcomp_govtok:")
+        give_morpho(new_g,features,u"new_govtok:")
+        give_morpho(new_d,features,u"new_deptok:")
+
+        ## DEPENDENCIES (governed by deptok/govtok):
+        for dep in tree.childs[xcomp_g]:
+            if dep.flag==u"XS": continue # skip possible external subjects           
+            features[u"dep:xcomp_gov-"+self.strip_type(dep.dtype,allowed_types)]=1
+        for dep in tree.childs[new_g]:
+            if dep.flag==u"XS": continue
+            features[u"dep:new_gov-"+self.strip_type(dep.dtype,allowed_types)]=1
+        for dep in tree.childs[new_d]:
+            if dep.flag==u"XS": continue
+            features[u"dep:new_dep-"+self.strip_type(dep.dtype,allowed_types)]=1
+            
+        features=createAllPairs(features)
+
+        return features
     
 
 
@@ -149,7 +194,7 @@ def createAllPairs(features):
 
   
 #create lemma and morpho features for given token
-#cats=set([u"CASE",u"NUM",u"SUBCAT",u"PRS",u"VOICE",u"INF"])
+categories=set([u"Number",u"Mood",u"Tense",u"VerbForm",u"Voice"])
 def give_morpho(token,f_list,prefix):
     """
     token: Token()
@@ -157,9 +202,12 @@ def give_morpho(token,f_list,prefix):
 
     #f_list[prefix+u"Lemma-"+token.lemma]=1
     f_list[prefix+u"CPOS-"+token.cpos]=1
-    #if token.feat!=u"_":
-    #    for tag in token.feat.split(u"|"):
-    #        f_list[prefix+tag]=1
+    if token.feat!=u"_":
+        for tag in token.feat.split(u"|"):
+            cat,val=tag.split("=",1)
+            if cat not in categories:
+                continue
+            f_list[prefix+tag]=1
 #    cat=None
 #    for tag in tags:
 #        if tag==u"_":continue
